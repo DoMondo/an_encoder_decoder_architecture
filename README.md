@@ -37,3 +37,6 @@ See [python/README.md](python/README.md)
 
 ## Using the C++/Halide version
 See [cpp/README.md](cpp/README.md)
+
+## License
+See [license file](LICENSE)
