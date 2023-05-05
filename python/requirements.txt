@@ -1,0 +1,4 @@
+natsort
+numpy
+numba
+opencv-python>=4
