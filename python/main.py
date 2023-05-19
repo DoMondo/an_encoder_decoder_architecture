@@ -37,25 +37,25 @@ def run_python_implementation(files: [str]):
         intensity_c, slopes_c = partial_drt.run(in_img, 2)
         intensity_d, slopes_d = partial_drt.run(in_img, 32)
 
-        ps_result = utils.threshold(intensity_a, slopes_a, 0.1832)
+        ps_result = threshold(intensity_a, slopes_a, 0.1832)
         ps_result[0:5, :, :] = 0
         ps_result[:, 0:5, :] = 0
         ps_result[-5:, :, :] = 0
         ps_result[:, -5:, :] = 0
 
-        pdrt2_result = utils.threshold(intensity_c, slopes_c, 0.029)
+        pdrt2_result = threshold(intensity_c, slopes_c, 0.029)
         pdrt2_result[0, :, :] = 0
         pdrt2_result[:, 0, :] = 0
         pdrt2_result[-1, :, :] = 0
         pdrt2_result[:, -1, :] = 0
 
-        pdrt32_result = utils.threshold(intensity_d, slopes_d, 0.25)
+        pdrt32_result = threshold(intensity_d, slopes_d, 0.25)
         pdrt32_result[0, :, :] = 0
         pdrt32_result[:, 0, :] = 0
         pdrt32_result[-1, :, :] = 0
         pdrt32_result[:, -1, :] = 0
 
-        mddrt = utils.threshold(intensity_b, slopes_b, 12, normalize=False)
+        mddrt = threshold(intensity_b, slopes_b, 12, normalize=False)
 
         os.makedirs('out', exist_ok=True)
         cv2.imwrite(f'out/python_{image_name}_pdrt2.png', pdrt2_result)
