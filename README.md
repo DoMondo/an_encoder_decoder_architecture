@@ -17,9 +17,15 @@
  * José Manuel Rodríguez-Ramos (Wooptix S.L., University of La Laguna)
 
 ## Citing this work 
+If using this work, please cite us.
+
+Gómez-Cárdenes, Ó.; Marichal-Hernández, J.G.; Son, J.-Y.; Pérez Jiménez, R.; Rodríguez-Ramos, J.M. An Encoder–Decoder Architecture within a Classical Signal-Processing Framework for Real-Time Barcode Segmentation. Sensors 2023, 23, 6109. https://doi.org/10.3390/s23136109
 
 ## Description
 This code accompanies the paper "An encoder-decoder architecture within a classical signal processing framework for real-time barcode segmentation". 
+
+Link to the paper: [https://www.mdpi.com/2371152](https://www.mdpi.com/2371152)
+
 The four algorithms analyzed in this paper are provided in the code:
 
  * PDRT 2: Partial Discrete Radon Transform with `tile_size=2`.
