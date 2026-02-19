@@ -1,0 +1,1209 @@
+\documentclass[sensors,article,submit,moreauthors]{Definitions/mdpi} 
+\firstpage{1} 
+\makeatletter 
+\setcounter{page}{\@firstpage} 
+\makeatother
+\pubvolume{1}
+\issuenum{1}
+\articlenumber{0}
+\pubyear{2023}
+\copyrightyear{2023}
+%\externaleditor{Academic Editor: Firstname Lastname} % For journal Automation, please change Academic Editor to "Communicated by"
+\datereceived{} 
+\dateaccepted{} 
+\datepublished{} 
+%\datecorrected{} % Corrected papers include a "Corrected: XXX" date in the original paper.
+%\dateretracted{} % Corrected papers include a "Retracted: XXX" date in the original paper.
+\hreflink{https://doi.org/} % If needed use \linebreak
+%\doinum{}
+\usepackage{float}
+\usepackage[caption = false]{subfig}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{makecell}
+
+\usepackage{easyReview}
+% \setmarksoff
+\hyphenation{trans-form}
+
+\algnewcommand{\LineComment}[1]{\State  \(\triangleright\) #1 \hfill~}
+
+\definecolor{dgreen}{RGB}{19, 189, 0}
+    
+%=================================================================
+\Title{An encoder--decoder architecture within a classical signal processing framework for real-time barcode segmentation%Attention: title altered. Please check that intended meaning has been retained.
+}
+
+% MDPI internal command: Title for citation in the left column
+\TitleCitation{Title}
+
+% Author Orchid ID: enter ID or remove command
+\newcommand{\orcidauthorA}{0000-0002-7951-982X} % Add \orcidA{} behind the author's name
+\newcommand{\orcidauthorB}{0000-0003-2297-8483} % Add \orcidB{} behind the author's name
+\newcommand{\orcidauthorC}{0000-0001-6099-0577} % Add \orcidB{} behind the author's name
+\newcommand{\orcidauthorD}{0000-0002-8849-592X} % Add \orcidB{} behind the author's name
+
+% Authors, for the paper (add full first names)
+\Author{{\'O}scar G{\'o}mez-C{\'a}rdenes$^{1}$\orcidA{}, Jos\'e Gil Marichal-Hern{\'a}ndez$^{1}$*\orcidB{}, Jung-Young Son$^{2}$\orcidC{}, Rafael P\'erez Jim\'enez$^{3}$\orcidD{} and Jos{\'e} Manuel Rodr{\'\i}guez-Ramos$^{1,4}$}
+
+
+% MDPI internal command: Authors, for metadata in PDF
+\AuthorNames{Oscar Gomez-Cardenes, Jose Gil Marichal-Hernandez, Jung-Young Son, Rafael Perez-Jimenez and Jose Manuel Rodriguez-Ramos}
+
+% MDPI internal command: Authors, for citation in the left column
+\AuthorCitation{Gomez-Cardenes, O.; Marichal-Hernandez, J.G.; Son, J.-Y.; Perez-Jimenez R.; Rodriguez-Ramos J.M.}
+
+\address{%
+$^{1}$ \quad Department of Industrial Engineering, Universidad de La Laguna, 38200, Spain\\
+$^{2}$ \quad Biomedical Engineering Department, Konyang University, 320-711, Rep. of Korea\\
+$^{3}$ \quad Institute for Technological Development and Innovation in Communications, Universidad de Las Palmas de Gran Canaria, 35017, Spain\\
+$^{4}$ \quad Wooptix S.L., 38204, Spain
+}
+
+\corres{Correspondence: jmariher@ull.edu.es}
+
+\abstract{
+In this work, two methods are proposed for solving the problem of one-dimensional barcode segmentation in images, with an emphasis on augmented reality (AR) applications. These methods take the partial discrete Radon transform as a building block. The first proposed method uses overlapping tiles for obtaining good angle precision while maintaining good spatial precision. The second one uses an encoder--decoder structure inspired by state-of-the-art convolutional neural networks for segmentation while maintaining a classical processing framework, thus not requiring training. 
+It is shown  that the second method's processing time is lower than video acquisition time with a 1024x1024 input on a CPU, which had not been previously achieved. The accuracy it obtains on datasets widely used by the scientific community is almost on par with that obtained using the most recent state-of-the-art methods using deep learning. 
+Beyond the challenges of those datasets, the method proposed is particularly well suited to image sequences taken with short exposure and exhibiting motion blur and lens blur, which are expected in a real-world AR scenario.
+Two implementations of the proposed methods are made available to the scientific community: one for easy prototyping and one optimized for parallel implementation that can be run on desktop and mobile phone CPUs.
+}
+
+
+% Keywords
+\keyword{Radon transform; scale-space methods; multiscale DRT; barcodes; encoder--decoder; pixel-wise segmentation; classical signal processing} 
+
+\featuredapplication{One-dimensional barcode scanning can be extended to augmented reality applications thanks to the fast and reliable detector proposed in this work.}
+
+\begin{document}
+
+\section{Introduction}
+\label{sec_introduction}
+One-dimensional barcodes are a means for visually encoding information to make it machine readable, making use of alternating bars and spaces of different widths \cite{GS1specifications}.
+
+This paper deals with barcode segmentation for camera-based barcode readers. To reduce user assistance in aligning the reader with the codes, segmentation produces an image mask that indicates exactly in which pixels, if any, barcodes are present, thereby indicating where the next stage, that is, decoding the data encoded in the barcode, should take place.
+
+The localization and proper segmentation of barcodes within an image have been frequently addressed in the literature but not so frequently when \textbf{a}ugmented \textbf{r}eality (AR) \cite{AR} goals are also set. For the real-time augmentation of a device's camera stream, the entire barcode localization/segmentation and decoding pipeline must fit within a few milliseconds. If the identification of the code in a frame on sight is transferred to the user with any latency, the augmented experience becomes unfeasible due to the misalignment of the marks in the augmented world and their real-world equivalents. 
+In this sense, even if a method achieves high detection accuracy, it is not suited to AR applications if it does not keep latency low.
+
+\subsection{Barcode detection summary}
+Up until a decade ago, most of the proposed methods could be classified as classical \cite{junco, wachenfeld, gallo, Lin11, katona12, bodnar12, soros, creusot15, creusot16} or based on machine learning, i.e., the latest trend.
+
+In classical methods, the main underlying idea is that the gradient in a zone of parallel bars shares a common preferential orientation. Thus, in the absence of rotation, when camera and code are aligned, areas with high horizontal gradients and low vertical gradients can be classified as one-dimensional barcoded areas. This main idea can be complemented using methods to achieve rotation invariance by detecting the orientation of the codes, for example, by analyzing image patches with Radon or Hough transforms; contrast invariance can be achieved using adaptive or histogram thresholding; further, in order to delimit the code region, a mixture of thresholding, connected components, and/or morphological operations are used to finish off the contours of the codes.
+
+Other classical methods rely on a geometrical line or bar detector \cite{namane17, chen17, fernandez17, xiao}. In the case of two-dimensional codes, which are not the subject of this work, the gradient criterion is not sufficient, so edge detection is replaced by corner detection \cite{soros}.
+
+Since 2013 \cite{zamberletti, zharkov, xiao}, these classical techniques have been hybridized with neural networks, either to replace computationally expensive line transforms for angle detection or to better contour the barcode shape.
+
+In recent years, there has been a renewed interest in the subject, with several papers applying advances in machine learning to the problem at hand, borrowing generic networks and retraining them to solve the specific problem of barcode localization \cite{hansen17, zhang20}. 
+In this latter group of articles, the results are quite good---comparable to those of the best classical approaches---both in terms of detection accuracy and inference time but also quite similar among the different proposed methods \cite{deepLearningReview}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/section-multiscale-domain/vgg16_xml.drawio.pdf}
+    \caption{Topology of the VGG16 model. ReLU stands for the type of activation function used: rectified linear unit.}
+    \label{fig:vgg16}
+\end{figure}
+
+\subsection{Semantic Segmentation}
+
+Recently, there have been an enormous amount of contributions in the field of object recognition \cite{alzubaidi2021review}, and a new type of \textbf{c}onvolutional \textbf{n}eural \textbf{n}etwork (CNN) has emerged to address the problem of semantic segmentation at the pixel level. The problem that these networks solve consists in assigning a label to each pixel in the image, indicating that it is part of an object of a certain class. CNNs have become better and better at solving this problem lately \cite{semantic_review}. 
+
+These networks usually have some kind of symmetry. The first part of the network, the encoder, starts with the input size of the image and lowers its spatial dimensions while increasing the depth of the data size, as shown, for example, in Figure \ref{fig:vgg16}. The second part of the network performs a reversed path, where the spatial dimension increases and the depth decreases again. A good example of this is the SegNet network \cite{segnet}, which utilizes the VGG16 network as the encoder and adds a new decoder that enables the network to perform pixel-wise semantic segmentation, as shown in Figure \ref{fig:segnet}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/section-multiscale-domain/segnet.pdf}
+    \caption{SegNet topology. It uses VGG16 as the encoder and adds a specularly symmetric decoder. Note that the indices of the max pooling operations are used when upsampling.}
+    \label{fig:segnet}
+\end{figure}
+
+
+The result of this kind of topology is that not only the image is classified into classes, effectively recognizing the objects that are present as VGG16 does, but also the object that lies behind each pixel is labeled with great accuracy, and the labels are correctly constrained to the borders of the object.
+
+\subsection{Review of selected works}
+In this subsection, we provide a more detailed analysis of a selection of previous contributions.
+
+\paragraph{Robust Angle-Invariant, 1D Barcode Detection \cite{zamberletti}}
+One of the most relevant papers in barcode recognition---dating from 2013---is Zamberletti {et al.'s}, who pioneered the use of machine learning and line domain transforms in angle detection, targeted mobile phones as their platform for combined capture and computation, and established one of the publicly available datasets still in use to assess detection accuracy. 
+Their technique consists of a concatenation of tasks: Canny detection for edge enhancement, Hough transform to detect lines, a multilayer perceptron operating on the angular dimension of the Hough domain to detect the presence of barcodes, and histogram-guided selection in the displacement dimension to determine bounding boxes.
+ Despite its low throughput---each image takes 270 ms to be processed on a mobile phone---its rotation invariance achieved by using the Hough transform is unprecedented. Thanks to the use of machine learning, the technique is also capable of detecting partially occluded barcodes, setting the state of the art at the time, correctly detecting around 83\% of barcodes in labeled datasets.
+
+\paragraph{Real-time Barcode Detection in the Wild \cite{creusot15}}
+Creusot and Munawar, in 2015, used maximal stable extremal region to detect, filter, and cluster bars pertaining to barcodes. They also used the Hough transform in the clustering stage. They increased the accuracy obtained by \citet{zamberletti} %Please remove italics from "et al." throughout the manuscript.
+ by 10 percent and, by moving to a desktop PC, could process a frame of 640x480 in the order of 100 ms.
+
+\paragraph{Low-computation egocentric barcode detector for the blind \cite{creusot16}}
+The same authors, a year later, aiming to process frames obtained with a wide-angle video camera, discarded their previous method because it was not resistant to motion blur and came up with a new method consisting of a geometric algorithm to detect parallel lines, where a representative line of the cluster determines the height of the barcode bounding box and an estimator of variations in the bisector of the line accounts for the width of the box. This new method increased by up to 98\% the capacity to detect codes on simple datasets and lowered the time cost of processing a frame to 40 ms. However, on a more realistic dataset of images taken with a high-resolution video camera---which they created and called EGO, but which is not publicly available---the detection rate dropped to 60\%, and the computation time on a PC increased to 116 ms. However, this could be considered the best approach to barcode segmentation with classical methods.
+
+\paragraph{Real-Time Barcode Detection and Classification using Deep Learning \cite{hansen17}}
+In 2017, Hansen {et al.} used a recently developed deep learning object detection algorithm, You Only Look Once, with the Darknet19 network structure on 416x416 images. As the YOLO output consists of rectangles containing barcodes, which can appear rotated, they used another network to predict the rotation angle.
+ They obtained the same accuracy as \citet{creusot16}, but thanks to the use of a GTX 1080 GPU, they could process a frame in 14 ms. However, this method cannot be considered to have processing time comparable to video acquisition time on CPUs.
+
+\paragraph{Universal Barcode Detector Using Semantic Segmentation \cite{zharkov}}
+More recently, Zharkov and Zagaynov, following the advances in semantic segmentation, specifically designed a neural network algorithm and trained it to detect 16 different types of one-dimensional barcodes and 5 types of two-dimensional barcodes. Its accuracy was on par with that of the method by \citet{creusot16} on one-dimensional barcodes. Its network structure, much more trimmed than YOLO's, achieved the processing time of only 3.8 ms on a GPU; however, when employed on a desktop CPU, computation took 44 ms on 512x512 images, which is the same time taken by the best of the classical methods. Though it is close, it is not in real time, even on low-resolution images%Please check that intended meaning has been retained.
+.
+
+\paragraph{One-Dimensional Barcode Detection: Novel Benchmark Datasets and Comprehensive Comparison of Deep Convolutional Neural Network Approaches \cite{dCNNs1Dbarcode}}
+Following another work by the same group \cite{deepLearningReview}, where they systematically analyzed the literature on neural networks applied to the problem under discussion, the authors created two training datasets: one containing consumer goods codes and the other containing postal labels. Both were created based on real, uncontrolled environments.
+ They then trained and tested a well-known algorithm, Faster R-CNN \cite{fasterRCNN}, as well as four underexplored ones, EfﬁcientDet \cite{efficientDet}, RetinaNet \cite{retinanet},  YOLO v5 \cite{yolov5}, and YOLO x \cite{yolox}.
+ They concluded that the YOLO v5 algorithm performed better in terms of accuracy and runtime on most datasets. Unfortunately, the authors did not provide the inference time on CPUs.
+
+\subsection{Remaining challenges}
+Despite such a proliferation of articles, several challenges remain unaddressed. 
+
+Success in training neural networks heavily depends on the quality of the set of images they are trained on, and these have usually been taken as sharp, still pictures under good lighting conditions. In some cases, they have even been synthetically generated by overlapping undistorted barcodes on real images \cite{zhao18, zharkov20}.
+
+Publicly available labeled barcode datasets usually have small dimensions, e.g., $640\times480$ pixels \cite{zamberletti}, and since the computational requirements markedly increase with image size in the training phase, those sizes have been accepted as good enough. In addition, this is justified by the fact that barcodes so small that they cannot not be detected at that scale would also not be decodable.  Nevertheless, in AR, barcode detection is desirable even at non-decodable scales.
+
+More importantly, it is neglected that a barcode reader designed to work in AR applications is not limited to analyzing static and well-exposed images but also analyzes short-exposure image sequences. Moreover, when the camera approaches the code, until the movement stabilizes, most frames exhibit motion blur. In addition, lens blur is frequent when a user starts to aim at a barcode and the lens has not had time to lock focus or when there are objects at different focus distances. However, out-of-focus images have generally not been of interest in previous works, which is again collaterally justified by the impossibility of decoding them.
+
+Another problem is that quality assessment often relies on metrics that, despite being objective and repeatable, do not necessarily explain the goodness of the method in real-world scenarios. The often used Jaccard index, or the similar Dice coefficient, measures the overlapping percentage between the ground truth barcode region and the predicted bounding boxes. Probably induced by machine learning competitions \cite{kaggle}, it is assumed that a higher Jaccard index means better performance. However, in a real-use case, a raster line good enough to perform decoding can be extracted from a predicted bounding box with a low Jaccard index. To our knowledge, no study has been conducted to determine the Jaccard index threshold needed to retrieve a satisfactory bisector line. Instead, most neural network papers provide detection metrics for various Jaccard index thresholds; virtually all achieve perfect detection rates at lower index values. The more barcodes can be decoded at those low thresholds, the lower the benefits of improving accuracy at high thresholds are. However, it is at these thresholds, close to perfect overlapping, that diminishing improvements are being reported in the state of the art.
+
+On the other hand, very few works claim to achieve computation time lower than 33 ms, as required by AR applications. Moreover, when they do, it is by running them on powerful desktop GPUs, which are not available in a real AR deployment.
+
+The last issue is that the evaluation of the methods lacks repeatability in the absence of the actual implementation code. This leads to the fact that some of the methods that are considered slow today could probably favorably compare to the latest methods if run on modern platforms. 
+Because of this, it is not possible to repeat quality assessment with metrics other than those proposed by the authors.
+
+\subsection{Purpose of this work}
+To overcome the challenges mentioned above, this paper revises a modification of the discrete Radon transform \cite{pdrt}, which makes the local detection of bar-shaped structures at a certain scale possible. This method presents a trade-off between the density of the grid on which it returns the results and the accuracy with which it determines the existence and orientation of the bars. This method works locally on non-overlapping image tiles; therefore, the spacing, or stride, between tiles is equal to the tile size. 
+
+In this contribution, the above method was improved to achieve multiscale detection. Multiscale methods \cite{lindeberg2013scale} can help by serving two purposes: barcode patterns are identified with scale invariance---which is important in a scenario where the operator can freely zoom the reader in and out of the codes---and computation time is reduced by working at each scale with the appropriate scale size, which is usually a fraction of the input resolution.
+
+The following tasks were tackled, with an emphasis on reducing computation speed, and thus latency, to make AR feasible without degrading the quality of segmentation:
+\begin{enumerate}
+    \item To propose an adapted version of the above method to allow overlapping among local detection zones so that tile sizes and spacing between detection processes %Please check that intended meaning has been retained.
+     are decoupled.
+    \item To propose a second adapted version that works by merging the multiple scales of the original method, i.e., the different tile sizes, in an automatic and optimal way.
+    \item To perform a comparison between the original method and the two cited innovations, and one between these and existing methods for barcode segmentation.
+\end{enumerate}
+
+The following section presents the ideas behind the existing method that are necessary to realize the proposed methods. Then, the outline of the paper is given at the end of Subsection \ref{sec:newIdeas}.
+
+
+\section{Discrete Radon Transform as a bar detector}
+\subsection{Discrete Radon Transform}
+The Radon transform \cite{Radon17} makes it possible to study a two-dimensional function $f(x,y)$ in terms of the integrals across all the lines that pass through it. The parameters that define the different lines are slope and displacement, or the interception of the line with the axis.
+
+In the 1990s, several authors \cite{GotzDruckmuller, Brady, Brandt} simultaneously proposed a \textbf{d}iscrete \textbf{R}adon \textbf{t}ransform (DRT), which exhibits linearithmic complexity, $O(N^2 \log N)$, by expressing the line integrals as summations over a stripe of connected samples of unit width and approximately constant slope over discrete signals. The virtue of the method is to work with ``loose digital lines'' that do not require interpolation. Moreover, these lines are constructed recursively with a multiscale approach, where the sums of segments of length two are carried out only once; when segments of size four are constructed, it is performed by optimally reusing the partial results of the previous scale, and so on. The result, for an input of size $N \times N$, is obtained after $\log_2 N$ stages. In  this method, the partial results are a means to arrive at the summation over the full domain and are discarded, but now, they will be essential to our purposes.
+
+Another remarkable characteristic of the DRT is that the lines are expressed in the form $y = x \cdot slope + displacement$, with the slope value being between 0 and 1, so the basic algorithm can only solve a quadrant consisting of $45^\circ$.
+If the input is vertically inverted, the result then corresponds to $y =-( x \cdot slope + displacement)$. Similarly, when adding a transposition, the eminently vertical lines are obtained. 
+Thus, after running the basic quadrant algorithm on three additional transpositions and/or the flipping of the input, the $180^{\circ}$ needed to cover the angular dimension of the slope is obtained.
+
+Two modifications to the original DRT algorithm are particularly relevant to the subsequent discussion and elucidation of the new methods:
+\begin{enumerate}
+    \item A method to better expose the parallelism of the DRT \cite{ictce19}, which achieves, in one pass, the eminently horizontal lines of the form $y = \pm (x \cdot slope + displacement)$, and in another pass, those of the form $x = \pm (y \cdot slope + displacement)$, thus changing from four quadrants to two groups of 90 degrees (around the horizontal axis and the vertical axis). Additionally, this reformulation eliminates the need for prior zero padding, which the conventional DRT requires.
+    \item A bar detector method, built upon the aforementioned modified DRT, that acts locally \cite{pdrt}, giving an estimate of the presence of bars and their inclination for each block of size $2^t \times 2^t$ into which an image can be subdivided without overlapping. This local size is denoted by \texttt{tile\_size}.
+\end{enumerate}
+
+The second method is described in a more detailed manner in the following subsection.
+
+\subsection{From a line detector to a local bar detector}
+
+An image region containing bar structures is characterized by the fact that the intensity of the pixel traversal at the angle at which the bars point is constant as we move longitudinally, either on a bar or in a space between bars. On the other hand, the intensity variation is maximal in the orthogonal direction, as we alternately traverse bars and spaces as fast as possible. This property seems to indicate that a bar detector must always consist of a gradient estimator, but this characteristic of bar structures can be expressed in another, equivalent way: If what is observed are the line integrals in the direction coincident with the bars, there is large variance between neighboring line integrals (the result of accumulating the intensity of the bars at some displacements and the intensity of the spaces at nearby displacements), whereas in the orthogonal direction, all displacements cross both bars and spaces to the same extent; therefore, the variance between neighbors is low. See Figure \ref{fig:basicIdea}.
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.75\textwidth]{figures/basicIdea}
+    \caption{A series of rotated image tiles containing bars, surrounded by plots of their pixel intensity sums per row (red) and per column (blue). The variance difference among them is maximal when the bars are fully vertically or horizontally oriented.}
+    \label{fig:basicIdea}
+\end{figure}
+
+
+The method described by \citet{pdrt}, consisting of the above method, works because the partial $m$ stage of the modified DRT as described by \citet{ictce19} computes the sums at $2^{m+1}-1$ possible angles of line segments of length $2^m$, starting at each position $(2^m \cdot k_x, d_y)$ with $d_y \in \{0. .N_y-1\}$  but $k_x \in \{0..\frac{N_x}{2^m}\}$ for eminently horizontal lines and similarly for vertical ones. Note that in each partial stage $m$, since no overlapping is allowed, the solutions are $2^m$ apart from each other, as shown in Figure \ref{fig:DRTnonoverlapping}. The goodness of the method lies in the fact that the images themselves are not sheared to different angles and then column- and row-wise summed, but the very internal structure of the partial DRT stages, normally discarded as an intermediate product, consists precisely of the pixels accumulated by angle and displacement; this means that the values plotted in blue and red in Figure \ref{fig:basicIdea} can be found, just in another order, in the same colors in Figure \ref{fig:DRTnonoverlapping}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.31\textwidth]{figures/stage2} \phantom{A}
+    \includegraphics[width=.31\textwidth]{figures/stage4} \phantom{A}
+    \includegraphics[width=.31\textwidth]{figures/stage8}
+    \caption{Illustration of how adjacent pixels and subsequently line segments are combined in the partial stages of DRT. In this example, $16\times16$ pixels (represented by circles) are combined initially, to the left, two by two; in the next stage, four by four; and finally, eight by eight. The final tile spacing between solutions (arrows, at the bottom) is eight. In each partial-stage solution, pixels are combined to consider each displacement and slope, but in non-overlapping vertical and horizontal bands, separated by dashed lines.}
+    \label{fig:DRTnonoverlapping}
+\end{figure}
+
+Mixing the above two illustrative images, Figure \ref{fig:DRTnonoverlapping} can be understood as the first three partial stages of the DRT on a problem of size $N=16$. If the process is stopped in this stage, the line integrals can be compared around the centers of the four tiles of size $8\times8$, which the DRT inner stages have created. The method returns the angle argument of the maximum variance differences between the horizontal and vertical lines within each tile, which are represented in red and blue, respectively, in the figure, supplemented with an activation metric that combines both variances.
+
+The estimations at each scale are non-overlapping; the evaluations can only be given for sets of $T$ neighbors separated by $T$ from each other in each dimension. In turn, the number of evaluable angles also depends on the \texttt{tile\_size}, since in areas of width $T$, there are $T$ positive and $T$ negative slopes that can be evaluated, giving a total of $2T$. If exclusively considering horizontal lines, the number becomes $2T-1$ when the double occurrence of the common $\pm 0$ slope is subtracted. Since they are to be compared with their vertical opposites, one more combination has to be subtracted due to coincidence and then the number has to be doubled (since the same comparison determines the existence in one direction and its orthogonal), up to a total of $2 (2T-2) = 4 (T-1)$.
+
+Importantly, with this method, if the scale of analysis---the \texttt{tile\_size}---matches the scale of the bars and as long as the whole tile consists of an area containing a barcode, the method executes detection %Please check that intended meaning has been retained.
+and returns the angle that is most coincident with the direction of the bars. 
+
+However, similarly to other pattern recognition problems, the scale is unknown {a priori}, and if it is not appropriately chosen, detection does not occur. Figure \ref{fig:singleScaleSchema} symbolizes the relationships that can take place between a barcoded area, represented by the blue rotated rectangle, and three possible scales. At smaller scales, as already emphasized, fewer angles are evaluated, but the grid of results is denser, and {vice versa}. Furthermore, the larger the scale is, the less guarantee there is that the tiles show areas that belong entirely to a barcode.
+
+\subsubsection{Disadvantages of working at a single scale}
+\label{sec:disadvantages_of_working_on_a_single_scale}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.31\textwidth]{figures/singleScaleExplanation2.pdf} \phantom{A}
+    \includegraphics[width=.31\textwidth]{figures/singleScaleExplanation4.pdf} \phantom{A}
+    \includegraphics[width=.31\textwidth]{figures/singleScaleExplanation8.pdf}
+    \caption{Dilemma of how to choose the right tile size to study a barcode region (in blue). From left to right, the tile subdivisions are shown for three different tile sizes, each of which quadruples the previous one in area. The tiles are depicted as rectangles with a circle at their center and define the spacing of the output grid. The tiles whose centers are within the barcode region are depicted in a coarser line.}
+    \label{fig:singleScaleSchema}
+\end{figure}
+
+
+
+Figure \ref{fig:singleScaleOutputs} shows the result of performing the method by \citet{pdrt} at various scales on an area of an actual image containing barcodes and other patterns, such as separator lines or alphanumeric characters. 
+Certain conclusions, which are helpful in proposing improvements in this initial method, can be drawn from it:
+\begin{enumerate}
+    \item At smaller scales, the angle cannot be determined with high precision. However, at the smallest scale, it is observed that the method discriminates between vertical bars, in colors in the range of the blues, and horizontal bars, in colors in the range of the oranges.
+    \item If the scale is so small that only a uniform area is observed in a tile (e.g., the interiors of bars and spaces at scales of two and four), no activation is generated, which, although correct, represents a problem when grouping all the bars and spaces, with varying widths belonging to the same barcode.
+    \item On the other hand, at larger scales, there may be tiles that simultaneously observe part of the barcode and the background. This poses a problem in accurately determining the boundaries of the code.
+    \item In the previous case, i.e., tiles containing both bars and background, but also in the case of tiles that contain a zone with only a few thick bars, with respect to a tile covering a zone with thin bars, the activation intensity decreases. This explains the variability in detection intensity while keeping the hue---where the angle is encoded---uniform in areas with barcodes at the greatest scale.
+    \item At large scales, a drop in detection intensity can also occur when there are differently angled structures within a single tile. This is the case of zones with alphanumeric characters. In these cases, unlike the previous two, in smaller-scale sub-tiles, there may be angular disagreement, and there may even be greater intensity of detection in the parts than in the whole.
+\end{enumerate}
+
+\begin{figure}[h]
+    \centering
+    \subfloat[Input image]{
+        \includegraphics[width=.25\textwidth]{figures/section-multiscale-domain/ejemplo_diferentes_scalas/6835_.jpg}
+    }
+    \subfloat[$\texttt{tile\_size} = 2$]{
+        \includegraphics[width=.25\textwidth]{figures/section-multiscale-domain/ejemplo_diferentes_scalas/tile_size_2.jpg}
+    }
+    \subfloat[$\texttt{tile\_size} = 4$]{
+        \includegraphics[width=.25\textwidth]{figures/section-multiscale-domain/ejemplo_diferentes_scalas/tile_size_4.jpg}
+    } \\
+    \subfloat[$\texttt{tile\_size} = 8$]{
+        \includegraphics[width=.25\textwidth]{figures/section-multiscale-domain/ejemplo_diferentes_scalas/tile_size_8.jpg}
+    }
+    \subfloat[$\texttt{tile\_size} = 16$]{
+        \includegraphics[width=.25\textwidth]{figures/section-multiscale-domain/ejemplo_diferentes_scalas/tile_size_16.jpg}
+    }
+    \subfloat[$\texttt{tile\_size} = 32$]{
+        \includegraphics[width=.25\textwidth]{figures/section-multiscale-domain/ejemplo_diferentes_scalas/tile_size_32.jpg}
+    }
+    \caption{From left to right, from top to bottom: the output of the method by \citet{pdrt} given the example image in the top-left corner at scales ranging from \texttt{tile\_size = 2} to \texttt{tile\_size = 32}. Note that as the \texttt{tile\_size} is doubled, the areas are quadrupled in size, but their number is reduced to a quarter. Each result was upsampled with nearest-neighbor interpolation so that all are shown to be the same size. The hue encodes the angle of the bars, and the intensity encodes the intensity of detection.}
+    \label{fig:singleScaleOutputs}
+\end{figure}
+
+\subsection{Initial ideas for the new methods}
+
+ Figure \ref{fig:alternativesSchema} employs the symbology of Figure \ref{fig:singleScaleSchema} to visually express the two variations that are proposed in this contribution.
+
+\label{sec:newIdeas}
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.31\textwidth]{figures/strideExplanation.pdf} \phantom{AAA} \includegraphics[width=.31\textwidth]{figures/multiScaleExplanation.pdf} 
+    \caption{On the left, large tile size with smaller tile spacing, implying tile overlapping. On the right, the merging of tiles at various scales to optimize barcode coverage.}
+    \label{fig:alternativesSchema}
+\end{figure}
+
+The first idea is to decouple tile size and tile spacing, i.e., to allow overlapping among tiles. The subfigure on the left shows local evaluation with the largest tile size of Figure \ref{fig:singleScaleSchema}, but with tile spacing of half that size. It is outlined in Section \ref{sec:overlapping} how to modify the stages prior to $t$, so that the latter can be optimally computed, allowing tile overlapping.
+
+The second idea consists in the fusion of several scales so that smaller-scale tiles vote coordinately with larger-scale tiles in which they are framed, and {vice versa}. The solution has the spacing of the smaller scale, and the angular precision and accuracy of the larger scale. This achieves better definition of barcode edges and avoids, on the one hand, small-scale non-activation in uniform inner barcode areas and, on the other hand, disagreement voting at different scales in areas lacking barcodes.
+
+It is shown that both variations increase the computation cost to different degrees, even if the computation of the previous stages, $m < t$, is always performed.
+
+Moreover, ideas taken from the encoder--decoder architecture, proven to be successful in pixel-wise segmentation tasks in the framework of \textbf{c}onvolutional \textbf{n}eural \textbf{n}etworks (CNNs) \cite{semantic_review}, are considered for the fusion of multiple scales but without resorting to machine learning. The encoder, in \textbf{a}rtificial \textbf{i}ntelligence (AI) terminology, is constituted, in this case, by the output of the DRT at all scales up to a certain \texttt{tile\_size}.
+The mixing of the results is performed in the decoder, and as in AI, there are upsampling operations, but by remaining within the classical framework, there are no learnable weights. All of this leads to a scale-invariant method that can be executed in real time without latency. 
+
+This second method is presented in Section \ref{sec:multiscale}. In Section \ref{sec:implementation}, details about optimized implementations for both methods are given. The paper concludes after presenting comparisons between these new methods and pre-existing ones in Section \ref{sec:results}.
+
+\section{Overlapping tiles for increased spatial resolution} 
+\label{sec:overlapping}
+
+ As explained in Figure \ref{fig:stride}, the unmodified DRT algorithm takes neighbor pixels in a vertical band consisting of pixels in horizontal positions $2\cdot k_x$ and $2 \cdot k_x + 1, \; \forall k_x \in \{0..N_x/2\}$, and computes and stores the sums with them with possible slopes $-1, 0 $, and $+1$. The next stage proceeds similarly and takes sums of length two from bands starting at $4 \cdot k_x$ and $4\cdot k_x + 2$ to create any possible sum of length four, in bands whose initial positions are now $4 \cdot k_x, \; \forall k_x \in \{0..N_x/4\}$. This is also illustrated in Figure \ref{fig:DRTnonoverlapping}. The final tile spacing for this example is eight, while the number of pixels is $N = N_x = N_y = 16$. The algorithm that accomplishes such a task can be found in the work by \citet{pdrt}, and its computational complexity in big $O$ notation is $O(N^2 \log_2(\mathtt{tile\_size}))$, as it stops after just a few stages. It is thoroughly discussed below in Subsection \ref{sec:compcomp}.
+
+  \begin{figure}[h]
+    \centering
+    \includegraphics[width=.48\textwidth]{figures/N16-M8-S8.pdf} 
+    \caption{A depiction of how non-overlapping bands fuse at scales two and four to obtain a final output spacing of eight pixels per dimension. The depiction combines, in one picture, the evolution of vertical bands as they are shown at the bottom of Figure \ref{fig:DRTnonoverlapping}.}
+    \label{fig:stride}
+ \end{figure}
+ 
+
+This algorithm must now be modified to allow overlapping, which implies computing, in stages greater than $s=\log_2(\mathtt{tile\_spacing})$, which are combinations that are not necessary in the original method.
+ Specifically, where in the existing method, in stage $m$, computations have to be carried out with the separation of $2^m$, now, the separation must be $2^{\min(s, \,m)}$. This and the appropriate memory allocation for these new computations are the only aspects that need to be changed to make an output with that spacing in the upper stages possible.
+
+This is exemplified in Figure \ref{fig:overlapping_stride}. On the left, it is shown what the spacing should look like for the same $N$ and \texttt{tile\_size}, but now with \texttt{tile\_spacing} = 4. Nothing changes at scales $m=1$ and $m=2$, but something does at scale $m=3$%Please check that intended meaning has been retained.
+. To introduce new line summations of length eight, no new combinations (with respect to the example in Figure \ref{fig:singleScaleSchema}) of length four and length two need to be created.
+
+ \begin{figure}[h]
+    \centering
+    \includegraphics[width=.48\textwidth]{figures/N16-M8-S4.pdf}
+    \includegraphics[width=.48\textwidth]{figures/N16-M8-S2.pdf} 
+    \caption{Illustration of how the final tile spacing determines the bands of computations in partial stages. Both represent $N=16$ and \texttt{tile\_size} $= 8$. They differ in the \texttt{tile\_spacing}, which is 4 on the left and 2 on the right.}
+    \label{fig:overlapping_stride}
+ \end{figure}
+ 
+On the right side of the above figure, the case for \texttt{tile\_spacing} $ = 2$ is shown, with $N$ and \texttt{tile\_size} remaining the same. In this case, additional bands must be created starting at scale $m=2$, because it is already greater than $\log_2(\mathtt{tile\_spacing})$. 
+Note that the algorithm is still optimal in the sense that it only computes the necessary sums once, and if they are required again, it reuses them.
+
+The new algorithm that allows overlapping, if \texttt{tile\_spacing} differs from \texttt{tile\_size}, is listed in Algorithm \ref{alg:PIDRT_stride}, highlighting the lines that need to be modified with respect to the algorithm by \citet{pdrt}. If \texttt{tile\_spacing} = \texttt{tile\_size}, both algorithms perform the same computations and thus exhibit the same complexity.
+
+\algnewcommand\Var[1]{\mbox{\ttfamily\detokenize{#1}}}
+\begin{algorithm}
+\scriptsize
+\caption{Computing the partial DRT of an image with tile overlapping.}
+\label{alg:PIDRT_stride}
+
+\begin{algorithmic}[1]
+\Function{\textbf{partial\_drt}}{I,\, tile\_size,\, \begingroup \color{dgreen} tile\_spacing \endgroup} \\
+\textbf{Input:} $I(x, y) \longrightarrow$ Image consisting of $N\times N$ data\\
+\textbf{Input:} $\mathrm{tile\_size} \longrightarrow$ Size of the tiles \\
+\textbf{Input:} $\mathrm{tile\_spacing} \longrightarrow$ Spacing of the tiles \\
+\textbf{Output:} $F(square, slope, displacement) \longrightarrow$ Result of the transform \\
+    \State $\mathrm{tile\_size\_bits} \gets \lfloor\log_2(\mathrm{tile\_size})\rfloor$
+    \begingroup \color{dgreen} \State $\mathrm{tile\_spacing\_bits} \gets \lfloor\log_2(\mathrm{tile\_spacing})\rfloor$ \endgroup
+    \State $N \gets \mathrm{\mathbf{size}}(I)[0]$ \Comment{Size supposed to be the same for x and y.}
+    \State $\mathrm{F_{0}} \gets I$  \Comment{Initialize first stage with unmodified input.}
+    \For{$\mathrm{stage}=1$ to $\mathrm{tile\_size\_bits}$} \Comment{Allocate memory for next stages and fill with zeros.}
+        \State $[\mathrm{n\_squares}, \mathrm{n\_slopes}] \gets \mathrm{\mathbf{get\_size\_partial\_drt}}(N, \mathrm{stage}, \mathrm{tile\_size}, \begingroup \color{dgreen}\mathrm{tile\_spacing} \endgroup)$
+        \State $\mathrm{F_{stage}} \gets \mathrm{\mathbf{zeros}}(\mathrm{n\_squares}, \mathrm{n\_slopes}, N)$
+    \EndFor
+    % \For{$i=0$ to $N-1$} \Comment{Copy input to $F_0$}
+    %     \For{$j=0$ to $N-1$}
+    %         \State $F_0(i, 0, j) \gets I(i, j)$
+    %     \EndFor
+    % \EndFor
+    
+    \For{$\mathrm{stage}=0$ to $\mathrm{tile\_size\_bits} - 1$} \Comment{Compute results in stage+1 from data in stage}
+        \State $\mathrm{current\_tile\_size} \gets 2^\mathrm{stage}$
+        \State $\mathrm{next\_tile\_size} \gets 2^{\mathrm{stage} + 1}$
+        \State $[\mathrm{out\_n\_squares}, \mathrm{out\_n\_slopes}] \gets \mathrm{\mathbf{get\_size\_partial\_drt}}(N, \mathrm{stage} + 1, \mathrm{tile\_size}, \begingroup \color{dgreen} \mathrm{tile\_spacing} \endgroup)$
+        \For{$\mathrm{out\_y\_square}=0$ to $\mathrm{out\_n\_squares} - 1$}
+            \For{$\mathrm{unsigned\_slope}=0$ to $\mathrm{out\_n\_slopes} - 1$} \Comment{slope as unsigned index}
+                \State $\mathrm{slope} \gets \mathrm{unsigned\_slope} - \mathrm{next\_tile\_size} + 1$ \Comment{positive and negative slopes}
+                \State $\mathrm{ab\_s} \gets |\mathrm{slope}|$
+                \State $\mathrm{s\_sign} \gets 1$
+                \If{$\mathrm{slope} < 0$}
+                    \State $\mathrm{s\_sign} = - 1$
+                \EndIf
+                \State $\mathrm{s2} \gets \lfloor\frac{\mathrm{ab\_s}}{2}\rfloor$
+                \State $\mathrm{rs} \gets \mathrm{ab\_s} - 2 \times \mathrm{s2}$ \Comment{remainder of absolute slope}
+                \State $\mathrm{slopeM} \gets \mathrm{current\_tile\_size} - 1 + \mathrm{s2} \times \mathrm{s\_sign}$ \Comment{slopes of previous segments}
+                \State $\mathrm{incIndB} \gets \mathrm{s\_sign} \times (\mathrm{s2} + \mathrm{rs})$ \Comment{displacement among segments}
+                \For{$\mathrm{writeIdx}=0$ to $N - 1$}
+                    \State $\mathrm{readIdx} \gets \mathrm{writeIdx}$    
+                    \State $\mathrm{A} \gets 0$    
+                    \State $\mathrm{B} \gets 0$    
+                    \If {$0 \leq \mathrm{readIdx} < N $}
+                    \begingroup \color{dgreen}
+                        \If {$\mathrm{stage} < \mathrm{tile\_spacing\_bits}$}
+                            \State $ \begingroup \color{black} \mathrm{A} \gets F_{\mathrm{stage}}(\mathrm{out\_y\_square} \times 2, \mathrm{slopeM}, \mathrm{readIdx}) \endgroup $
+                        \Else
+                            \State $\mathrm{A} \gets F_{\mathrm{stage}}(\mathrm{out\_y\_square}, \mathrm{slopeM}, \mathrm{readIdx})$    
+                        \EndIf
+                    \endgroup
+                    \EndIf
+                    \If {$0 \leq \mathrm{readIdx} + \mathrm{incIndB} < N $}
+                        \begingroup \color{dgreen}
+                        \If {$\mathrm{stage} < \mathrm{tile\_spacing\_bits}$}
+                            \State $ \begingroup \color{black} \mathrm{B} \gets F_{\mathrm{stage}}(\mathrm{out\_y\_square} \times 2 + 1, \mathrm{slopeM}, \mathrm{readIdx} + \mathrm{incIndB}) \endgroup $
+                        \Else
+                            \State $ \mathrm{B} \gets F_{\mathrm{stage}}(\mathrm{out\_y\_square} + \mathrm{stage} - \mathrm{tile\_spacing\_bits} + 1, \mathrm{slopeM}, \mathrm{readIdx} + \mathrm{incIndB})$    
+                        \EndIf
+                        \endgroup
+                    \EndIf
+                    \State $F_{\mathrm{stage} + 1}(\mathrm{out\_y\_square}, \mathrm{unsigned\_slope}, \mathrm{writeIdx}) \gets \mathrm{A} + \mathrm{B}$    
+                \EndFor
+            \EndFor
+        \EndFor
+    \EndFor
+    \State \Return $F_{\mathrm{tile\_size\_bits}}$
+\EndFunction \\
+\Function{$\mathrm{\mathbf{get\_size\_partial\_drt}}$}{$N, \mathrm{stage}, \mathrm{tile\_size}\begingroup \color{dgreen} , \mathrm{tile\_spacing} \endgroup $}
+    \State $\mathrm{stage\_size} \gets 2^\mathrm{stage}$
+    \begingroup \color{dgreen} 
+    \State $\mathrm{n\_squares} \gets \lfloor\frac{N - \mathbf{\mathrm{min}}(\mathrm{stage\_size}, \mathrm{tile\_size})}{\mathbf{\mathrm{min}}(\mathrm{stage\_size}, \mathrm{tile\_spacing})}\rfloor + 1$ \endgroup
+    \State $\mathrm{slope\_size} \gets 2 \times \mathrm{stage\_size} - 1$ 
+    \State \Return{$[\mathrm{n\_squares}, \mathrm{slope\_size}]$}
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+
+
+\subsection{Computational Complexity without overlapping}
+\label{sec:compcomp}
+The unmodified Radon transform \cite{ictce19} ends in stage $n=\log_2 N$, with $N$ being the side size of a square image, exhibiting computational complexity $O(N^2 \log_2 N)$ or, more precisely, examining the range of the \texttt{for} loops; the number of operations (two data reads, one addition and one write per iteration) for the horizontal partial DRT is
+\begin{equation}
+4 \sum_{m=1}^n \left( N \frac{N}{2^m}(2^{m+1} -1)\right) = 4 N^2 \left(2\,n+\frac{1}{2^n} \right) \; \approx \; 8 N^2 n .
+\end{equation}
+
+To also consider the vertical lines, the same computations must be repeated after transposing the input, for a total of
+\begin{equation}
+8 N^2 n + 2 N^2 + 8 N^2 n = N^2 (16 n + 2).
+\end{equation}
+
+In the method by \citet{pdrt}, on the other hand, a new parameter appears, \texttt{tile\_size}, which indicates the desired size of local zones where to evaluate the existence of bars, i.e., the scale of the analysis. Let \texttt{tile\_size}$\,=T=2^t < 2^n$. Essentially, only the first $t$ partial stages of the DRT are computed, discarding the results of the stages up to $t-1$. This step, as discussed above, requires $N^2 (16 t + 2)$ operations.
+
+After the partial DRTs have been calculated, the variance in horizontal and vertical neighborhoods of $T$ values around the tile centers of bands in stage $t$ are compared for $2 T - 1$ angles. Those centers are located at positions $(k_x+\frac{1}{2}\cdot T, k_y+\frac{1}{2}\cdot T)$, with $k_x \in \{0..\frac{N_x}{T}-1\}$ and $ k_y \in \{0..\frac{N_y}{T}-1\}$. This step increments the number of arithmetical and I/O data operations to $(2 T - 1) \frac{N_x}{T} \frac{N_y}{T} (2T + 1)$. The algorithm that calculates the variance is listed as \texttt{bar\_detector} by \citet{pdrt} and is referenced  with the same name in Chapter \ref{sec:multiscale}.
+
+Typical values of $n$ and $t$ could be $n=10$ and$ \, N=1024$, and $t=5$ and$ \, T = 32$, and in this case, the final number of operations represent just 48\% of the operations required by the unmodified DRT reaching stage $n$. If, instead, the scale of analysis is $T=16$, with$ \, t=4$, the number of operations would be 38\%. This is due to the early halting of the transform, and as stated by \citet{pdrt}, some remarkably fast implementations can be obtained, even in mobile phones, when overlapping is not allowed.
+
+\subsection{Computational complexity with overlapping}
+ Let \texttt{tile\_spacing}$\,= S = 2^s \leq 2^t < 2^n$. Now, the number of operations of the partial DRTs, instead of $N^2 (16t + 2)$, increments to
+\begin{equation}
+4 \sum_{m=1}^t \left( N \frac{N}{\min(2^m,2^s)}(2^{m+1} -1)\right) = 4 N^2 \left( \frac{3}{\min(2, 2^s)} + \frac{7}{\min(4, 2^s)}+ \ldots +\frac{2^{t+1}-1}{min(2^t, 2^s)} \right).
+\end{equation}
+
+ Afterwards, the variance comparisons add $(2 T - 1) \frac{N_x}{S} \frac{N_y}{S} (2T + 1)$ operations.
+
+In total, for $N=1024$ and $T=32$, but with $S=2$, the number of operations, instead of reducing, now increases by up to 9.27 times that of the unmodified DRT. For the case where $S=4$  and $T=16$, the increment is of just 1.13 times.
+
+If comparisons are made not with the unmodified DRT but with the method by \citet{pdrt}, the proposed method is 19.19 and 2.94 times more costly, respectively, for the $N, T, $ and $S$ parameter combinations provided above. So this new method depends, to a large extent, on the output resolution and amount of overlapping set or, in other words, the quality improvement it provides. This encourages finding an alternative way to increase quality without such a steep increment in complexity, as discussed in Section \ref{sec:results}.
+
+In the following sections, what has been thus far called \texttt{tile\_spacing} is now referred to as \texttt{stride}, as it is a more commonly used term in the CNN literature.
+
+
+\section{Multiscale domain-based segmentation}
+\label{sec:multiscale} 
+
+\subsection{Modifying DRT output for multiscale analysis}
+
+In order to propose multiscale domain-based segmentation, the partial DRT algorithm was modified so that it returns not merely the last stage but all the $F_i$ initial stages, until it halts in the $\log_2(\texttt{tile\_size})$ stage. 
+
+Now, it is possible to run \texttt{bar\_detector} at all the scales, resulting in a pyramid of data detection actions.
+For the considered case, the sizes of the data structures are shown in Table \ref{table:pdrt_sizes} for input size $1024\times1024$ and  $\texttt{tile\_size} = 32$.
+
+\begin{table}[H] 
+\tiny
+\caption{Output data sizes for the partial DRT algorithm, modified to return data from all the stages and \texttt{bar\_detector}. The dimensions of the partial DRT are \texttt{n\_tiles x n\_slopes x n\_displacements}, and the dimensions of the \texttt{bar\_detector} are \texttt{channel x n\_tiles x n\_tiles}, where the channel contains the intensity and the angle planes. }
+\begin{tabularx}{\textwidth}{CCCC}
+\toprule
+\textbf{\texttt{tile\_size}} & \textbf{$F_i$}	& \textbf{Partial DRT}	&  \textbf{Bar Detector} \\
+\midrule
+1 & $F_0$ & - & - \\
+2 & $F_1$ & $512\times3\times1024$ & $2\times512\times512$ \\
+4 & $F_2$ & $256\times7\times1024$ & $2\times256\times256$ \\
+8 & $F_3$ & $128\times15\times1024$ & $2\times128\times128$ \\
+16 & $F_4$ & $64\times31\times1024$ & $2\times64\times64$ \\
+32 & $F_5$ & $32\times63\times1024$ & $2\times32\times32$ \\
+\bottomrule
+\end{tabularx}
+\label{table:pdrt_sizes}
+\end{table}
+    
+
+These changes give place, optimally, to all the subfigures in Figure \ref{fig:singleScaleOutputs}, simultaneously. The analysis of these data yielded interesting insights, as discussed in Subsection \ref{sec:disadvantages_of_working_on_a_single_scale}. 
+
+\subsection{Finding similarities with machine learning-based algorithms}
+
+Taking advantage of the goodness of each scale is the goal of this approach. There are barcodes that can be correctly detected at different scales, mainly because of the size of the barcode but also because of lens blur and motion blur. By looking at the pattern of the data structures that appear, where we have maps at different scales and the spatial resolution becomes smaller, while the angle-domain resolution becomes bigger with the scale, it \textit{almost} resembles a CNN for classification. The depth, channels, features, or classes of a classification network are equivalent to the angles in our problem. For example, the new pyramid of detection data, shown in Figure {\ref{fig:first_architecture}}, is remarkably similar to the architecture of the VGG16 model \cite{VGG16} widely used in the literature, shown in Figure \ref{fig:vgg16}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/section-multiscale-domain/first_architecture.pdf}
+    \caption{Architecture of the detector based on the partial DRT, as described in \cite{pdrt} but taking advantage of all the calculated stages up to $\texttt{tile\_size}=32$. }
+    \label{fig:first_architecture}
+\end{figure}
+
+Models such as VGG16, LeNet-5 \cite{lenet}, and GoogleLeNet \cite{googlelenet} all share the same purpose: the classification of objects that are represented in an image. They also have the same funnel shape, which starts with the size of the image and reduces the spatial dimensions while increasing the depth dimension---the number of classes for classification. In the partial DRT-based detector, the same process happens, substituting the concept of class with that of angle. This ``funnel'' shape is what constitutes an encoder.
+
+\subsection{Adapting the existing algorithm to resemble an encoder}
+
+Returning to the problem at hand and reformulating some of the vocabulary used, it can be said that in \cite{pdrt}, there is already an algorithm that can classify the bars present in the input image into angles. That is, a probability of each of the 126 angles is obtained for each of the blocks that define the spatial dimensions in the last stage ($32\times 32$). In the original \texttt{bar\_detector} algorithm, the probability of each angle is discarded, and only the maximum angle is written into the output. To have an algorithm somewhat equivalent to the encoder of a CNN and avoid losing data, this was changed so that all the probabilities can be obtained. This change can be observed in the modified version of Algorithm \ref{alg:encoder} and gives place to the topology that is shown in Figure \ref{fig:encoder}. The complexity of the algorithm described in \cite{pdrt} remains untouched, although the amount of memory that is needed increases.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/section-multiscale-domain/encoder_pdrt_hidden.pdf}
+    \caption{New encoder topology, based on the work by \citet{pdrt} and modified as described in this section. Note that for simplicity, the partial DRT data structure was made smaller in scale for display purposes.}
+    \label{fig:encoder}
+\end{figure}
+
+\begin{algorithm}
+\scriptsize
+\caption{Creating the activation maps for the CNN-like encoder from partial DRTs.}
+\label{alg:encoder}
+
+
+\begin{algorithmic}[1]
+\Function{\textbf{bar\_detector}}{H,\ V} \\
+\tab\textbf{Input:} $H(x,\ y) \longrightarrow$ Horizontal partial DRT of size $[\Var{n_squares},\ \Var{n_slopes},\ \Var{N}]$ \\
+\tab\textbf{Input:} $V(x,\ y) \longrightarrow$ Vertical partial DRT of size $[\Var{n_squares},\ \Var{n_slopes},\ \Var{N}]$  \\
+\tab\textbf{Output:} $\Var{activation_map}(x,\ y,\ \Var{slope}) \longrightarrow$ Per tile and slope activation map \
+    \State $\Var{n_squares} \gets \mathbf{size}(V)[0]$  \Comment{n\_squares is N over tile\_size}
+    \State $\Var{n_slopes} \gets \mathbf{size}(V)[1]$   \Comment{n\_slopes is 2xtile\_size - 1}
+    \State $\Var{N} \gets \mathbf{size}(V)[2]$
+    \State $\Var{activation_map} \gets \mathbf{zeros}(\Var{n_squares},\ \Var{n_squares},\ \Var{n_slopes}\times 2)$
+    \State $\Var{tile_size} \gets \frac{N}{\Var{n_squares}}$
+    \For{\quad$\Var{x_square}=0$\quad to\quad $\Var{n_squares} - 1$}
+        \For{\quad$\Var{y_square}=0$\quad to\quad $\Var{n_squares} - 1$}
+            \State $\Var{x_central} \gets \Var{x_square} \times \Var{tile_size} + \frac{\Var{tile_size}}{2} $
+            \State $\Var{y_central} \gets \Var{y_square} \times \Var{tile_size} + \frac{\Var{tile_size}}{2} $
+            \For{\quad$\Var{slope}=-\Var{tile_size} + 1$\quad to\quad $\Var{tile_size}$}
+                \State $\Var{start_h} \gets \Var{y_central} - \frac{\Var{tile_size}}{2} - \frac{\Var{slope}}{2}$
+                \State $\Var{end_h} \gets \Var{y_central} + \frac{\Var{tile_size}}{2} - \frac{\Var{slope}}{2}$
+                \State $\Var{values_h} \gets H(\Var{x_square}, \Var{slope} + \Var{tile_size} - 1, \Var{start_h}:\Var{end_h})$
+                \State $\Var{start_v} \gets \Var{x_central} - \frac{\Var{tile_size}}{2} + \frac{\Var{slope}}{2}$
+                \State $\Var{end_v} \gets \Var{x_central} + \frac{\Var{tile_size}}{2} + \frac{\Var{slope}}{2}$
+                \State $\Var{values_v} \gets V(\Var{y_square}, - \Var{slope} + \Var{tile_size} - 1, \Var{start_v}:\Var{end_v})$
+                \State $\Var{value_horizontal} \gets \overline{|\Var{values_h} - \overline{\Var{values_h}}|}$
+                \State $\Var{value_vertical} \gets \overline{|\Var{values_v} - \overline{\Var{values_v}}|}$
+                \State $v \gets |\Var{value_horizontal} - \Var{value_vertical}|$
+                \If {$\Var{value_horizontal} > \Var{value_vertical}$}
+                    \State $\Var{activation_map}(\Var{x_square},\ \Var{y_square},\ \Var{slope}+\Var{tile_size} - 1) \gets v$
+                    \State $\Var{activation_map}(\Var{x_square},\ \Var{y_square},\ \Var{slope} + \Var{tile_size} - 1 + \Var{n_slopes}) \gets -v$
+                \Else
+                    \State $\Var{activation_map}(\Var{x_square},\ \Var{y_square},\ \Var{slope} + \Var{tile_size} - 1) \gets -v$
+                    \State $\Var{activation_map}(\Var{x_square},\ \Var{y_square},\ \Var{slope} + \Var{tile_size} - 1 + \Var{n_slopes}) \gets v$
+                \EndIf
+            \EndFor
+        \EndFor
+    \EndFor
+    \State \textbf{return}\quad \Var{activation_map}
+\EndFunction
+
+\\
+
+\Function{\textbf{encoder}}{I} \\ 
+\tab\textbf{Input:} $I(x,\ y) \longrightarrow$ Image consisting of $N\times N$ data \\
+\tab\textbf{Output:} $\Var{activation_maps}(\Var{scale},\ x,\ y,\ \Var{angle})$
+    \State $\Var{tile_size} \gets 32$ \Comment{Suitable for image size of 1024.}
+    \State $\Var{tile_spacing} \gets \Var{tile_size}$ \Comment{Notice that $tile\_spacing=tile\_size$. Fusion works without overlapping.}
+    \State $\Var{hdrt} \gets \Var{partial_drt}(I,\ \Var{tile_size},\ \Var{tile_spacing})$  
+    \State $\Var{vdrt} \gets \Var{partial_drt}(I^T,\ \Var{tile_size},\ \Var{tile_spacing})$ \Comment{Notice the transposed input.}
+    \For{\quad$\Var{stage}=0$ \quad to \quad $log_2(32)$}
+        \State $\Var{activation_maps}(\Var{stage}) \gets \mathbf{bar\_detector}(\Var{hdrt}(\Var{stage}),\ \Var{vdrt}(\Var{stage}))$
+    \EndFor
+    \State \textbf{return}\quad \Var{activation_maps}
+\EndFunction
+
+\end{algorithmic}
+\end{algorithm}
+
+
+\subsection{Testing the encoder}
+
+With these simple adaptations, the authors have described a topology that is similar to those of the encoders of the mentioned CNNs, and the activation maps can now be studied. In addition, this encoder is optimal, because it is based on the DRT \cite{GotzDruckmuller}, which is optimal in itself.
+If the maps are analyzed by choosing a scale and comparing all the 2D activation maps for all the angles, the pixels should gain intensity whenever a bar oriented along the angle of the slice is present. On the other hand, if an angle is chosen, and the scale is traversed, the pixels should gain intensity whenever a bar has the adequate size to be detected on the scale of the slice. To corroborate the first experiment, a synthetic image was prepared. This image was divided along the vertical axis such that the upper part contained lines at an angle that was different from that in the lower part. Therefore, the 14 activation maps at the second scale, of size $256\times256$, had to gain intensity in different activation map angle slices, indicating the angle of the lines; see Figure \ref{fig:encoder_first_experiment}. For the second experiment, a synthetic image was prepared, again dividing it into two halves, where the upper part contained coarser lines and the lower part contained finer lines. This time, the angle index was fixed to match the angle of the lines, and the scale domain was traversed. The five activation maps had to gain intensity at different times, meaning that the lines were better detected at different scales, as demonstrated in Figure \ref{fig:encoder_second_experiment}. 
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_.png} \\
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle0.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle1.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle2.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle3.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle4.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle5.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle6.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle7.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle8.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle9.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle10.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle11.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle12.png}
+    \includegraphics[width=.12\textwidth]{figures/section-multiscale-domain/encoder_first_experiment/experiment_1_angle12.png}
+    \caption{From left to right: input image and activation maps at scale = 2, slicing for slopes 0 to 12, which correspond to angles in the range $[-\pi/4, 3\pi/4]$. A colormap is used to represent intensity, ranging from a darker blue to a lighter blue. The upper part of the image contains lines at an angle of $\pi/6$, and the lower part of the image contains lines at an angle of $\pi/3$. Note that the activation map correctly activates more in the corresponding slice of each half. }
+    \label{fig:encoder_first_experiment}
+\end{figure}
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/encoder_second_experiment/experiment_2_.png} 
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/encoder_second_experiment/experiment_2_scale0.png} 
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/encoder_second_experiment/experiment_2_scale1.png} 
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/encoder_second_experiment/experiment_2_scale2.png} 
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/encoder_second_experiment/experiment_2_scale3.png} 
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/encoder_second_experiment/experiment_2_scale4.png} 
+    \caption{From left to right: input image and activation maps for the central angle of each scale, from finer (first) to coarser (last) scales. A colormap is used to represent intensity, ranging from a darker blue to a lighter blue. It is clear that finer lines (lower part) produce more intensity at the second and third scales, while coarser lines (upper part) are better detected at the last scale.}
+    \label{fig:encoder_second_experiment}
+\end{figure}
+
+\subsection{Designing a decoder}
+
+Now that the encoder has been designed and tested, a decoder is needed to perform pixel-wise segmentation. As shown above, in Figure \ref{fig:segnet}, a way of taking advantage of an encoder to perform segmentation is to build a topology that is structured similarly to a mirror. Starting from the last operation of the decoder, that is, the coarser scale, for each operation of the encoder that lowers the spatial resolution, downsampling, a new operation that does the opposite, increasing the resolution, is placed, recreating the same structure but in reverse. 
+
+In the case of VGG16, the downsampling operation is a max pooling operation. This operation consists in reducing the dimensionality of a layer by choosing the maxima of the features contained in the sub-regions of the biggest domain. SegNet uses an unpooling operation, which uses the indices (the arrows in Figure \ref{fig:segnet}) of the pooling operation for placing the features at the appropriate locations of the biggest domain; see Figure \ref{fig:unpooling}.
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.75\textwidth]{figures/section-multiscale-domain/unpooling.drawio.pdf} 
+    \caption{Example of unpooling operation. The pooling operation reduces dimensionality, and the unpooling operation increases it. Note that there are ``gaps'' where no indices refer to the array on the right%Please check that intended meaning has been retained.
+    	. }
+    \label{fig:unpooling}
+\end{figure}
+
+In this way, the features detected in the activation maps at a coarser scale are translated into a finer scale using the indices of the mirror pool operation on the encoder part, so compared with upsampling based on bilinear interpolation, the features are located more precisely. This allows one to retrieve the spatial resolution that is lost in the encoding part. As we can see in Figure \ref{fig:unpooling}, there are gaps, parts of the map where there are zeros, because no index refers to those locations. This information is filled in by layers that follow the unpooling operation. These layers are \textbf{learned}. The authors of SegNet avoided implementing a learnable upsampling operation in order to speed up training and inference by letting the convolutions and activation functions perform that process. Other models use learned upsampling operations such as transposed convolution, also called up-convolution or even (confusingly) deconvolution. This is the approach that the \textbf{f}ull \textbf{c}onvolutional \textbf{n}etwork (FCN) \cite{FCN} model uses. This operation does not produce ``gaps'' as the unpooling operation does, and interestingly, the activation maps resulting from upsampling are summed with the ones of the corresponding downsampling operation.
+
+Regardless, in our approach, both upsampling approaches have the same characteristics, i.e., there is a learnable part, and the operations that achieve the process are just pooling operations, convolutions, and activation functions. Pooling and convolutions that have strides can achieve the same objective, but a pooling--unpooling configuration always needs to be matched with learnable convolution in order to solve the ``gaps''. Of course, this DRT-based encoder is not similar to a CNN encoder, as classification and operations such as max pooling do not exist. Therefore, a bit of imagination is needed to create an operation that is opposed to the downsampling operation and understand what the role of the learnable part (the convolutions) is. Taking both analyzed pixel-wise segmentation models, a decoder was designed. 
+
+\subsubsection{An upsampling operation for a DRT-based encoder}
+
+First of all, the first building block is the upsampling operation. Since there is no learnable part, this should be straightforward. Taking inspiration from unpooling, the goal is to generate a set of activation maps that have doubled their dimensions in width and height. So, at a scale that has size $h\times w\times c$, the output is $2\cdot h\times 2\cdot w\times c$. In order to find the indices of the non-existing pooling operation, the arguments of the maxima of the activation functions %Please check that intended meaning has been retained.
+at the next finer scale are used. Since this scale has a smaller angle dimension, this simple formula is used to calculate the finer angle index, $f_a$, using the coarser angle index, $f_c$, where $C$ is the size of the angle domain at the finer scale.
+\begin{equation}
+f_a = \lfloor\frac{f_c}{2}\rfloor \mod C
+\end{equation}
+
+\begin{algorithm}
+\scriptsize
+\caption{Unpooling operation for a DRT-based encoder.}
+\label{alg:unpool}
+\textbf{Input:} $F(x,\ y,\ c) \longrightarrow$ Fine activations of size $[\Var{n_squares}\cdot 2,\ \Var{n_squares}\cdot 2,\ \Var{n_angles_fine}]$ \\
+\textbf{Input:} $C(x,\ y,\ c) \longrightarrow$ Coarse activations of size $[\Var{n_squares},\ \Var{n_squares},\ \Var{n_angles_coarse}]$  \\
+\textbf{Output:} $N(x,\ y,\ c) \longrightarrow$ New activations of size $[\Var{n_squares}\cdot 2,\ \Var{n_squares}\cdot 2,\ \Var{n_angles_coarse}]$  \\
+\begin{algorithmic}[1]
+\Function{\textbf{unpool}}{C,\ F}
+    \State $\Var{n_squares} \gets \mathbf{size}(C)[0]$
+    \State $\Var{n_angles_fine} \gets \mathbf{size}(F)[2]$
+    \State $\Var{n_angles_coarse} \gets \mathbf{size}(C)[2]$
+    \For{\quad$i=0$\quad to\quad $\Var{n_squares} - 1$}
+        \For{\quad$j=0$\quad to\quad $\Var{n_squares} - 1$}
+            \State $\Var{max_angle} \gets \mathbf{argmax}(C(x,\ y,\ :))$
+            \State $\Var{max_angle_finer} \gets \lfloor\frac{\Var{max_angle}}{2}\rfloor \mod \Var{n_angles_fine}$
+            \State $\Var{max_val} \gets 0;\quad vj \gets -1;\quad vi \gets -1$
+            \For{\quad$ii=0$\quad to\quad $2$}
+                \For{\quad$jj=0$\quad to\quad $2$}
+                    \State $v \gets F(i\cdot 2 + ii,\ j\cdot 2 + jj, \Var{max_angle_finer})$
+                    \If {$v > \Var{max_val}$}
+                        \State $\Var{max_val} \gets v;\quad vi \gets ii;\quad vj \gets jj$
+                    \EndIf
+                \EndFor
+            \EndFor
+            \State $N(i\cdot 2 + vi,\ j\cdot 2 + vj,\ \Var{max_angle}) \gets C(i,\ j,\ \Var{max_angle})$
+        \EndFor
+    \EndFor
+    \State \textbf{return}\quad \Var{N}
+\EndFunction
+
+\end{algorithmic}
+\end{algorithm}
+
+Algorithm \ref{alg:unpool} implements the custom unpooling operation for complementing the DRT-based encoder. There is an \textbf{argmax} operation in line 7. This means that the function is already different from the normal unpooling that one finds in a machine learning frameworks such as tensorflow or pytorch; only the max angle gets \textit{propagated}. This design choice is because of two reasons. One of them is that this acts as an activation function, so not all the features propagate, and a \textit{priority} is implemented. The other one is that while it is true that to resemble an actual unpooling operation, all the angles should propagate and, later on, an activation function should prioritize, this work is largely focused on speed, which allows us to significantly reduce the number of operations. Therefore, with this algorithm, the activation function and the unpooling behaviors of a decoder such as the one in SegNet are solved. Figure \ref{fig:unpool_example} shows the effect of executing this algorithm. As expected, the feature propagates to the right spots, but there are gaps. The improvement in accuracy of each of the activation functions that get propagated at the different scales is what makes it possible to gain precision in the final pixel-wise segmentation.
+
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/unpool_example/experiment_3_input.png} 
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/unpool_example/experiment_3_coarse.png} 
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/unpool_example/experiment_3_fine.png} 
+    \includegraphics[width=.15\textwidth]{figures/section-multiscale-domain/unpool_example/experiment_3_unpool.png} 
+    \caption{From left to right: cropped part of input image; coarse activation map for horizontal angles; fine activation map for horizontal angles; the result of performing the unpooling  described in Algorithm \ref{alg:unpool}. Note that there are ``gaps'' and that each activation function that got propagated used the coarse angle information, and the correct spot was calculated by finding the argument of the maxima within the corresponding area at a finer scale. }
+    \label{fig:unpool_example}
+\end{figure}
+
+Finally, the hardest part to design is the one that, in models such as FCN or SegNet, is \textbf{learnable}. The DRT-based encoder should mimic what networks learn  to do in their smart upsampling. The learnable part of a decoder performs three actions:
+\begin{enumerate}
+\item Propagating features that are prominent at a coarser scale into a finer scale. This is achieved with the unpooling in Algorithm \ref{alg:unpool}.
+\item Propagating features to the neighboring vicinity%This term has been retained. However, please check it is used correctly.
+. In this problem, vicinity is defined in the $x$- and $y$-dimensions but also in the angle (depth) dimension.
+\item Allowing features that are prominent at any scale to be considered. As Figure \ref{fig:encoder_second_experiment} suggests, there can be bars that are only detected at finer scales, so coarser detection should not overthrow these if they are more prominent.
+\end{enumerate}
+
+So, two aspects have yet to be solved. Considering that the remaining palette of operations that a CNN uses are convolutions and activation functions, it is easy to conclude that the propagation of features at the same scale to the neighboring vicinity can be achieved with a low-pass filter. So, this was solved as follows: a $9\times 9$ separable Gaussian filter is applied to each activation map for each angle; then, the angle dimension is also filtered but only with a size of three.
+
+Finally, to allow features to appear in the middle of the decoding stage, at an intermediate scale, the result of the activation maps of the encoder are summed into the new activation maps, similarly to the FCN. This is a simple pixel-wise sum operation, and no factors are applied. In this way, a decoder algorithm was obtained, and together with the encoder, a pixel-wise segmentation algorithm for finding barcodes was designed. The final architecture of the segmentation algorithm is shown in Figure \ref{fig:full_architecture}.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/section-multiscale-domain/full_architecture.drawio.pdf}
+    \caption{Full encoder--decoder architecture, where the DRT-based encoder is matched with the newly designed decoder integrating the operations described in this section.}
+    \label{fig:full_architecture}
+\end{figure}
+\section{Implementation}
+\label{sec:implementation} 
+
+With the goal of real-time barcode detection for augmented reality, two different programming environments were chosen. The first one, used for designing and debugging algorithms, was Python \cite{van1995technical}, which brings easiness of use and a very low development cost. This makes the fast prototyping of new ideas very affordable. The downside of using Python for these kind of computer vision tasks, given its interpreted nature, is that sometimes, a bottleneck can impede the testing of some ideas, because they are too computationally heavy. For mitigating this, to some extent, the authors used the Python package \texttt{Numba} \cite{numba} as an accelerator. The version used for this work was Python 3.10.
+
+The second environment was chosen to make lower-level, accelerated implementation possible, which is suitable for targeting computing units such as CPUs, GPUs, and DSPs, and platforms such as desktop, mobile, and web. It consisted of code written in C++17 \cite{C++ISO:2017:IIIa}. The algorithms were written in the Halide language \cite{ragan2013halide}. Halide is a programming language embedded in C++ that decouples the declaration of computer vision algorithms from the schedules. This allows one to easily try different scheduling strategies and writing different schedules for different architectures. It also provides different \textit{auto-schedulers} \cite{adams2019learning, mullapudi2016automatically, li2018differentiable} that automatically generate schedules that can be used as a starting point or even become the final schedule. In this case, the authors used the Adams2019 \cite{adams2019learning} auto-scheduler for generating all the needed schedules. From the possible targets, the authors chose to test the results and execution time on a desktop CPU (Intel i9-9900) and a mobile phone CPU (Qualcomm Snapdragon 888). 
+
+Both Python and C++ versions are available from the GitHub repository \cite{source_code}.
+
+\subsection{Pruning and optimization}
+
+Three main types of optimization were carried out before any hardware-specific acceleration. From now on, the authors refer to four algorithms by their acronyms:
+\begin{itemize}
+    \item \textbf{PDRT 2}: The original algorithm of the partial discrete Radon transform as described in \cite{pdrt}, executed with $\texttt{tile\_size} = 2$. This means that a single step of the DRT was calculated.
+    \item \textbf{PDRT 32}: The original algorithm of the partial discrete Radon transform as described in \cite{pdrt}, executed with $\texttt{tile\_size} = 32$. This means that five steps of the DRT were calculated.
+    \item \textbf{PS DRT}: Partially strided DRT-based detector as described in Section \ref{sec:overlapping}. The chosen parameters were $\texttt{tile\_size} = 32$ and $\texttt{stride} = 2$.
+    \item \textbf{MDD DRT}: Multiscale domain detector based on the DRT, as described in Section \ref{sec:multiscale}.
+\end{itemize}
+
+% \subsubsection{Solving a bottleneck in the decoder}
+
+The average absolute deviation (D) was calculated for each \texttt{tile} and each slope; see lines 21 and 22 of Algorithm \ref{alg:encoder}. This can be better expressed as
+\begin{equation}
+\overline{A} = \frac{1}{n}\sum_{i=1}^{n}{x_i}
+\end{equation}
+\begin{equation}
+D = \frac{1}{n}\sum_{i=1}^{n}{|x_i - \overline{A}|}
+\end{equation}
+Considering the architecture of modern computing units and the goal of these operations, the authors realized that this is wasteful and can be substituted with the following, with no impact on quality:
+\begin{equation}
+\tilde{D} = \sum_{i=1}^{n - 1}{\mid x_i - x_{i+1} \mid}
+\end{equation}
+This approximation was already considered in \cite{pdrt}.
+
+% \subsubsection{Integer arithmetic}
+
+To achieve an implementation that takes advantage of the fact that the discrete Radon transform works with only integer arithmetic, the data type chosen for the buffers was 16-bit integers, which is enough to hold the range of the sums that take place in the execution of a DRT for an image of $1024\times 1024$ and for a $\texttt{tile\_size} = 32$ (five stages). Because the \textbf{PS DRT} and \textbf{MDD DRT} algorithms calculate differences and thus hold negative values in some variables, the signed 16-bit integer data type was chosen instead of its unsigned variant. This speeds up computation when compared with the 32-bit floating point data type that was used when designing the algorithm, and the results are equivalent. This approach was also implemented with \textbf{PDRT 2} and \textbf{PDRT 32}.
+
+% \subsubsection{Angle-domain pruning for \textbf{MDD DRT}}
+
+The resulting number of angles in this algorithm is excessive since such fine-grained precision on the angle is not needed for this task. By profiling the execution of the \textbf{MDD DRT} algorithm, it can be noticed that about 80\% of the time is spent on the last convolution block. That is because the domain over which the convolution is executed is $512\times512\times126$. By halving the size of the output angle dimension in each \texttt{unpool} until it reaches size 30, the final quality remains almost equal, and the number of operations is greatly reduced. The sizes of the operations of the final algorithm following optimization are shown in Table \ref{table:mdd_sizes}.
+
+\begin{table}[H] 
+
+% \setlength{\extrarowheight}{20pt}
+\caption{Output data sizes for the pruned \textbf{MDD DRT} algorithm. The \texttt{unpool} operations include the summation with the original activation functions of the encoder, as it is implemented in the Halide version. The changes resulting from pruning are marked in green. }
+\begin{tabularx}{\textwidth}{
+    >{\hsize=.25\hsize\linewidth=\hsize}X
+    >{\hsize=.5\hsize\linewidth=\hsize}X
+    >{\hsize=0.5\hsize\linewidth=\hsize}X
+    >{\hsize=1.0\hsize\linewidth=\hsize}X
+}
+\toprule
+\textbf{Block} & \textbf{Operation} & \textbf{Input Size} & \textbf{Output Size} \\
+\midrule
+\tiny Encoder & 
+\tiny \texttt{mdd\_drt\_v} & 
+\tiny$1024,1,1024$ & 
+\tiny$[1024,3,512]$ $[1024,7,256]$ $[1024,15,128]$ $[1024,31,64]$ $[1024,63,32]$ \\
+
+\tiny Encoder & 
+\tiny \texttt{mdd\_drt\_h} & 
+\tiny$1024,1,1024$ & 
+\tiny$[1024,3,512]$ $[1024,7,256]$ $[1024,15,128]$ $[1024,31,64]$ $[1024,63,32]$ \\
+
+\tiny Encoder & 
+\tiny \texttt{mdd\_bar\_detector\_0} & 
+\tiny$[1024,3,512]$ $[1024,3,512]$ & 
+\tiny$[6,512,512]$ \\ 
+
+\tiny Encoder & 
+\tiny \texttt{mdd\_bar\_detector\_1} & 
+\tiny$[1024,7,256]$\ $[1024,7,256]$ & 
+\tiny$[14,256,256]$ \\ 
+
+\tiny Encoder & 
+\tiny \texttt{mdd\_bar\_detector\_2} & 
+\tiny$[1024,15,128]$\ $[1024,15,128]$ & 
+\tiny$[30,128,128]$ \\ 
+
+\tiny Encoder & 
+\tiny \texttt{mdd\_bar\_detector\_3} & 
+\tiny$[1024,31,64]$\ $[1024,31,64]$ & 
+\tiny$[62,64,64]$ \\ 
+
+\tiny Encoder & 
+\tiny \texttt{mdd\_bar\_detector\_4} & 
+\tiny$[1024,63,32]$\ $[1024,63,32]$ & 
+\tiny$[126,32,32]$ \\ 
+
+\tiny Decoder & 
+\tiny \texttt{unpool\_3} & 
+\tiny$[126,32,32]$\ $[62,64,64]$ & 
+\tiny$[\textcolor{dgreen}{62},64,64]$ \\ 
+\tiny Decoder & 
+\tiny \texttt{convolutions\_3} & 
+\tiny$[\textcolor{dgreen}{62},64,64]$ & 
+\tiny$[\textcolor{dgreen}{62},64,64]$ \\ 
+
+\tiny Decoder & 
+\tiny \texttt{unpool\_2} & 
+\tiny$[\textcolor{dgreen}{62},64,64]$\ $[30,128,128]$ & 
+\tiny$[\textcolor{dgreen}{30},128,128]$ \\ 
+\tiny Decoder & 
+\tiny \texttt{convolutions\_2} & 
+\tiny$[\textcolor{dgreen}{30},128,128]$ & 
+\tiny$[\textcolor{dgreen}{30},128,128]$ \\ 
+
+\tiny Decoder & 
+\tiny \texttt{unpool\_1} & 
+\tiny$[\textcolor{dgreen}{30},128,128]$\ $[14,256,256]$ & 
+\tiny$[\textcolor{dgreen}{30},256,256]$ \\ 
+\tiny Decoder & 
+\tiny \texttt{convolutions\_1} & 
+\tiny$[\textcolor{dgreen}{30},256,256]$ & 
+\tiny$[\textcolor{dgreen}{30},256,256]$ \\ 
+
+\tiny Decoder & 
+\tiny \texttt{unpool\_0} & 
+\tiny$[\textcolor{dgreen}{30},256,256]$\ $[6,512,512]$ & 
+\tiny$[\textcolor{dgreen}{30},512,512]$ \\ 
+\tiny Decoder & 
+\tiny \texttt{convolutions\_0} & 
+\tiny$[\textcolor{dgreen}{30},512,512]$ & 
+\tiny$[\textcolor{dgreen}{30},512,512]$ \\ 
+
+\tiny Decoder & 
+\tiny \texttt{argmatxth} & 
+\tiny$[\textcolor{dgreen}{30},512,512]$ & 
+\tiny$[512,512,3]$ \\ 
+
+\bottomrule
+\end{tabularx}
+\label{table:mdd_sizes}
+\end{table}
+
+\subsection{Choosing a fast approximation of a Gaussian filter}
+
+In Section \ref{sec:multiscale}, low-pass filtering is described as a $9\times9$ separable Gaussian filter. There are many works that deal with approximations of low-pass filtering that use different strategies, such as approximating a Gaussian filter using a box filter with multiple passes \cite{wells1986}, using a discrete kernel \cite{kawase2003frame}, or performing filtering in a downsampled image \cite{MartinGGBZBN15}.
+Having implemented all the operations in integer arithmetic, it made sense to approximate the Gaussian filter using a set of two box filters of size $3\times3$, which were again implemented in a separable fashion. This, as the simplest option, gave a good result in terms of speed and quality.
+\section{Results and Conclusions} 
+\label{sec:results}
+
+\subsection{Time results}
+\begin{figure}[h]
+    \centering
+    \scalebox{.75}{\input{figures/results/time_measurements.tex}}
+    \caption{Average execution times of the Halide implementation of the four algorithms. These measurements were performed on an i9 9900 desktop CPU and on the CPU of the Qualcomm Snapdragon 888 mobile SoC. The red dashed line emphasizes the $1/30 s$ time limit.}
+    \label{fig:time_measurements}
+\end{figure}
+
+The results of benchmark execution---with enough repetitions to ensure repeatability---are shown in Figure \ref{fig:time_measurements}. These correspond to the auto-scheduling of the Halide/C++ implementation. Python time results were not measured, as its implementation purpose was solely that of prototyping and designing. Two targets were chosen as a test bed. One was the Intel i9 9900 desktop processor, with eight cores @ 3.10 GHz, and the other was a state-of-the-art CPU of a mobile \textbf{s}ystem \textbf{o}n \textbf{c}hip (SoC), \textbf{S}nap\textbf{d}ragon (SD) 888, which has eight Kryo 680 cores @ 3 GHz. The latter was chosen because most AR applications run on a mobile device. The GPU of the same SoC could have also been an interesting target and will be addressed in future work.
+
+
+
+\texttt{PDRT 2}'s and \texttt{PDRT 32}'s average execution time was far below the 33 ms threshold. Nevertheless, as stated in Subsection \ref{sec:disadvantages_of_working_on_a_single_scale}, these algorithms were not the focus of this work, as their output is not appropriate for segmentation, and are reported here as a mere reference. \texttt{PS DRT}, which, qualitatively, had acceptable segmentation results, was very far from a real-time, AR-ready implementation, since its execution took 107 and 215 milliseconds on i9 and SD, respectively. Lastly, \texttt{MDD DRT}, which had good segmentation results, achieved real-time execution times below 33 ms (21 ms) on the desktop CPU but not on the mobile CPU (66 ms).
+
+\subsection{Runtime comparison}
+In order to be able to draw conclusions from directly comparing our methods with those by other authors, the conditions had to be similar, but previous methods mostly use low-resolution inputs and ignore mobile platforms. 
+
+
+
+\begin{table}[h]
+\caption{CPU execution time results of our proposed methods compared with a selection of classical and neural network-based methods.}
+\centering
+\begin{tabularx}{0.7\textwidth}
+{
+    >{\hsize=.8\hsize\linewidth=\hsize}C
+    >{\hsize=.1\hsize\linewidth=\hsize}r
+    >{\hsize=.1\hsize\linewidth=\hsize}r
+}
+\toprule
+\textbf{Method} & \textbf{Resolution} & \textbf{Time (ms)} \\
+\cmidrule{1-3}
+YOLO v5 \cite{yolov5}              &  1024x1024 & 70 \\
+\phantom{\textit{idem}}              &  512x512 & 61 \\
+\phantom{\textit{idem}}                 &  640x480 & 45 \\
+\hline
+Zamberletti et al. (2013) \cite{zamberletti}     & 640x480 & 130 \\
+\hline Creusot and Munawar (2015) \cite{creusot15}      & 640x480 & 115 \\
+\hline Creusot and Munawar (2016) \cite{creusot16}      & 640x480 & 42 \\
+\phantom{\textit{idem}}       & 1080x960 & 116 \\
+\hline Zharkov and Zagaynov (2019) \cite{zharkov}      & 512x512 & 44 \\
+\hline  \textbf{MDD DRT}                   & 1024x1024 & 21  \\
+\hline \textbf{PS DRT}                   & 1024x1024 & 107  \\
+\bottomrule
+\end{tabularx}
+\label{tab:execution_times_comparison}
+\end{table}
+
+It can be seen in Table \ref{tab:execution_times_comparison} that our \texttt{MDD DRT} method was faster than any other method when run on a CPU, even if it required the highest input resolution. Moreover, it was the only one performing under the 33 ms time limit.
+Neural network-based methods were represented by the hand-crafted method by \citet{zharkov} and by our measurement of inference times of YOLO v5 small, as it was selected by \citet{dCNNs1Dbarcode} as a good representative of the state-of-the-art methods in terms of both accuracy and speed. 
+
+Previous methods that manage to get below the 33 ms threshold are able to accomplish this because they target desktop GPUs, which this paper does not consider, as they are not a realistic platform for wearable AR devices. 
+
+Although it can be claimed that our methods outperformed the literature alternatives, our challenge was achieving execution within self-imposed time constraints without neglecting the quality requirements, and in this sense, the second proposed method can be considered to be fully satisfactory. 
+
+\subsection{Accuracy comparison}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.35\textwidth]{figures/results/cluttered_mdd.png}
+    \includegraphics[width=0.35\textwidth]{figures/results/cluttered_mdd_excentricity2.png}
+    \caption{Left: unprocessed output of the \texttt{MDD DRT} segmenter. Right: superimposed on the input image, connected regions whose aspect ratio between the major and minor oriented axes is consistent with a barcode and whose area exceeds a minimum threshold.}
+    \label{fig:excentricity}
+\end{figure}
+
+It should be noted that the output of our algorithms, i.e., the classification of areas according to bar presence and orientation, cannot be directly used as a barcode detector. In this sense, the outputs contain a lot of false positives, that is, areas where the segmenter detects potential barcodes, but where there are none. Since angular information on the orientation of the codes is available, a simple criterion of oriented eccentricity in connected regions is adequate to eliminate most of them. This simple criterion---which probably has a good margin of improvement---is the one used to turn our segmentation outputs into masks of detection for subsequent accuracy comparison.  A particular example is provided, for a cluttered scenario, in Figure \ref{fig:excentricity}.
+
+\subsubsection{Accuracy metric and benchmarking datasets}
+Given a binary mask $G$ for ground truth and a binary mask $F$ for the detection results%Please check that intended meaning has been retained.
+, a commonly accepted metric is the \textbf{i}ntersection \textbf{o}ver \textbf{u}nion (IoU) or Jaccard index, defined as
+\begin{equation}
+J(G, F)=\frac{|G \cap F|}{|G \cup F|}
+\end{equation}
+
+The overall detection rate, $D$, for a given Jaccard threshold $T$ is defined as the ratio of images in a dataset $S$ where the Jaccard index is greater than that threshold.
+\begin{equation}
+D_T=\frac{\left.\sum_{i \in S} J(G, F) \geq T\right)}{|S|}
+\end{equation}
+
+The averaged detection rate for several thresholds can be obtained as
+\begin{equation}
+D_{T1-T2}=\frac{\sum_{T \in T1}^{T2} D_T}{T_2-T_1}
+\end{equation}
+
+To compare our methods in terms of accuracy, the detection rates on two datasets for which binary ground truth masks are available were calculated.
+The first dataset (\citet{zamberletti}), named ``Arte-lab Rotated'', contains 365 images of sizes 640x480 and 648x488. The second one (\citet{wachenfeld}), named ``WWU Münster'', contains 1055 images of size 2592x1944. Both datasets were labeled by \citet{zamberletti} with binary masks that indicate what pixels of an image correspond to a barcode. These masks are of sizes 640x480 and 648x488, so this was the resolution used in the tests. There are 595 masks for WWW Münster, and from the 365 masks of Arte-Lab Rotated, 5 were discarded due to them being wrong.
+Our method would have benefited if these inputs had had 1024x1024 resolution. As that was not the case, we preferred to resize them to the expected size by adding zeroes to the borders, instead of upsampling them.
+
+\begin{table}[H]
+\caption{Accuracy metric results for our methods, those in Table \ref{tab:execution_times_comparison}, and those considered state-of-the-art methods in \cite{dCNNs1Dbarcode} on two barcode datasets.}
+\begin{tabularx}{\textwidth}
+{
+    >{\hsize=.45\hsize\linewidth=\hsize}C
+    >{\hsize=.1375\hsize\linewidth=\hsize}C
+    >{\hsize=.1375\hsize\linewidth=\hsize}C
+    >{\hsize=.1375\hsize\linewidth=\hsize}C
+    >{\hsize=.1375\hsize\linewidth=\hsize}C
+}
+\toprule
+\multirow{2}{*} {\textbf{Method}} & \multicolumn{2}{c}{\textbf{Arte-Lab Rotated}} & \multicolumn{2}{c}{\textbf{WWU Münster}} \\
+\cmidrule{2-5}
+& $D_{0.5}$ & $D_{0.5-0.9}$ & $D_{0.5}$ & $D_{0.5-0.9}$ \\
+\cmidrule{1-5}
+EfficientDet \cite{efficientDet}   & 1.000 & 0.855 & 0.999 & 0.782 \\
+Faster R-CNN \cite{fasterRCNN}     & 1.000 & 0.859 & 1.000 & 0.792 \\
+Retina Net \cite{retinanet}        & 1.000 & 0.876 & 1.000 & 0.809 \\
+YOLO v5 \cite{yolov5}              & 0.996 & 0.935 & 0.998 & 0.896 \\
+YOLO x \cite{yolox}                & 0.970 & 0.848 & 1.000 & 0.813 \\
+Zamberletti et al. (2013) \cite{zamberletti}      & 0.805 & - & 0.829 & - \\
+Creusot and Munawar (2015) \cite{creusot15}      & 0.893 & - & 0.963 & - \\
+Creusot and Munawar (2016) \cite{creusot16}      & 0.989 & - & 0.982 & - \\
+Hansen et al. (2017) \cite{hansen17}      & 0.926 & - & 0.991 & - \\
+Zharkov and Zagaynov (2019) \cite{zharkov}      & 0.989 & - & 0.980 & - \\
+\textbf{PS DRT}                    & 0.886 & 0.700 & 0.944 & 0.732 \\
+\textbf{MDD DRT}                   & 0.901 & 0.783 & 0.958 & 0.827 \\
+\bottomrule
+\end{tabularx}
+\label{table:map_table}
+\end{table}
+
+Metrics for both methods are included in Table \ref{table:map_table}. \texttt{PS DRT} was not only the slowest but also the one that profiled the barcodes the worst. Therefore, it is not the focus of attention in the following.
+
+Looking at the results obtained with \texttt{MDD DRT}, it is worth noting that it improved upon some classical methods, obtaining detection rates of 90 and 95 \% at 0.5, but it remained below the perfect detection rate at this threshold, which the majority of the methods based on neural networks and the classical method in \cite{creusot16} achieved.
+
+The limits of the proposed method are discussed in Subsection \ref{sec:qualitatyveAnalisis}; nonetheless, it is worth commenting here that some defocused barcodes that can be easily detected with state-of-the-art methods were not recognized by ours. This can be explained by the low resolution and because they presented compression. Compression artifacts make fine-grained activation maps differ in angle compared with the coarse-grained ones. This makes our method consider the detection unreliable and induces low scores even at $D_{0.5}$.
+
+Nonetheless, the results obtained on these datasets, considering the information in Table \ref{tab:execution_times_comparison}, can be considered successful, given that the proposed method is designed for inputs that do not contain artifacts and are of greater resolution. This is discussed further in Section \ref{sec:qualitatyveAnalisis}.
+On the Münster dataset, which is also compressed but was downsampled from higher-resolution inputs, the results of the proposed method were better, reaching 95\% detection accuracy and superseding several methods in the $D_{0.5-0.9}$ metric, because it profiled barcodes that can be troublesome for other methods quite well.
+
+
+\subsection{Synthetic parametric tests}
+
+\begin{figure}[h]
+    \centering
+    \scalebox{.75} { \input{figures/results/experimental/threshold} }
+    \caption{The \texttt{MDD DRT} algorithm was executed for thresholds ranging from 10 to 38 on both the WWU Münster dataset and the Arte-lab Rotated dataset. The selected threshold value is marked with a dashed red line.}
+    \label{fig:threshold}
+\end{figure}
+
+The only one of the parameters of the \texttt{MDD DRT} algorithm that can be considered free is the activation threshold. For this single parameter, the evolution graphs of the accuracy metrics are presented for the two datasets in Figure \ref{fig:threshold}. Given that the two datasets are different, a threshold of 28 was selected to achieve a good compromise between the two.
+
+
+\begin{figure}[h]
+    \centering
+    \scalebox{.75} { \input{figures/results/experimental/scale} }
+    \caption{The IoU of a barcode that was scaled to different sizes.}
+    \label{fig:scale}
+\end{figure}
+
+It is interesting to evaluate how the IoU metric changes with the size of a barcode. For this, the following experiment was carried out: An image containing a barcode was synthesized in such a way that the size of the pixels of the barcode was programmatically set, ranging from 1024---the maximum size possible if the barcode is horizontal---to 0, varying at intervals of 10.24 pixels, such that 100 measurements were performed. The ground truth mask was synthesized at the same time. The \texttt{MDD DRT} algorithm worked as expected, and the quality of detection slowly degraded with the size of the barcode. The result of such analysis can be seen in Figure \ref{fig:scale}.
+
+\begin{figure}[h]
+    \centering
+    \scalebox{.75} { \input{figures/results/experimental/angle} }
+    \caption{The IoU of a barcode that was rotated to angles ranging from 0 to 180 degrees.}
+    \label{fig:angle}
+\end{figure}
+
+The angle is a factor that needs to be evaluated, since the \texttt{MDD DRT} algorithm should provide angle invariance. A new experiment was devised: The same barcode generation scheme used in the scale experiment was used; in this case, the size was fixed at 512 pixels in width, and the angle was varied from 0 to 180 degrees at intervals of 0.6, so that 300 images were evaluated. The behavior was as expected: the detector performed equally well at all angles. The result of this experiment can be appreciated in Figure \ref{fig:angle}. 
+
+\subsection{Qualitative analysis}
+\label{sec:qualitatyveAnalisis}
+ \replace{Well-delimited, sharp, and sufficiently large codes pose no problem for the existing methods reported in the literature and neither for the methods proposed in this paper.}{Well-defined, sharp and large codes are not a challenge for previous proposals, nor for the current one.} Hence, a qualitative discussion on more challenging situations, for which representative samples are shown in Figure \ref{fig:results_4_methods}, was carried out. It is recommended to view the samples enlarged in the digital version of the paper. The same examples were analyzed with the existing Radon-based bar detector method at two fixed scales and with the two new methods, i.e., partially strided and multiscale domain detection. The discussion on the samples is as follows:
+
+
+\begin{itemize}
+\item The first row shows a barcode that could be considered unproblematic. Although it contains some contrast variation due to paper bending and quite separated bars, its main difficulty, only for some neural network-based methods, is that its aspect ratio is approximately 1:8. This was not a problem for the \texttt{PS DRT} algorithm, nor for \texttt{MDD DRT}. The fixed-scale algorithms, on the other hand, had problems in properly contouring the code boundaries. This was consistently found in the rest of the examples; therefore, these algorithms, whose outputs are of interest mainly because they are the base and apex of the data pyramid on which the \texttt{PS DRT} and \texttt{MDD DRT} methods operate, are not further discussed.
+
+\item The second row shows an image containing a multitude of codes. Some are out of focus; some are rotated; and several dividing lines and alphabetic characters make it difficult to separate them correctly. In addition, a couple of codes are incomplete at the lower end. The \texttt{MDD DRT} method contoured the codes better than the \texttt{PS DRT} method. It was also more sensitive to the angle of the lines and tended to make them more uniform, but this does not result in definite advantages in a real-world application. Instead, as seen in the previous subsection, the focus from now on is exclusively on the \texttt{MDD DRT} method, because the \texttt{PS DRT} method simply does not fit into the time constraints.
+The segmentation was accurate, and even the small and trimmed code on the border was detected.
+
+The main disadvantage of the \texttt{MDD DRT} method is that it joins characters close to a barcode if they are made up of strokes with the same slope. This is the case for characters such as $0$, 1, 7, O, I, etc. Fortunately, these "overflows" can be counteracted in the post-processing phase, which is not covered in this article. 
+
+Bars or outlines close and parallel to the ends of the codes are also problematic, since the measures taken to save the internal areas with low texture but belonging to the codes force their undesired inclusion.  
+
+This image is the same as the one used in Figure \ref{fig:excentricity} to illustrate how to get rid of false positives with a simple criterion.
+
+\item The third and fourth rows illustrate the cases of barcodes affected by strong and extreme lens blur, respectively. The proposed methods still managed to adequately contour the input of the third row but not that of the fourth row. The final scale of the algorithm, with analysis zones of 32x32 pixels, allowed bars to be detected, even though, at a smaller scale, the blur merged them with other bars.  Also depending on the loss of contrast, at some point, the detector stops triggering. In an example such as this, the detector showed its performance limits, but regardless of whether it can be further improved as a future line of work, it is already a major advance over previous methods, which simply do not work at all when facing heavily defocused barcodes.
+
+\item The next row presents a case of severe motion blur in the direction that affects the code bars the most. Both types of blur, lens blur and motion blur, were treated in the same way, and in cases such as this, the detector behaved as expected. 
+
+\item The image in the sixth row combines very low contrast with glare and smudges on the codes. As it can be seen, the detection is satisfactory, but in this extreme case, the combined effect of a wide bar, low contrast, and glares oriented in the opposite direction with respect to the bars broke the code into two disconnected regions. This is another limitation of our method. In \texttt{PS DRT}, this does not occur, since it is the voting scheme in \texttt{MDD DRT} that penalizes character regions with sharp slope changes nearby that works against the correct detection. Fortunately, in the rare occasions in which this happens, it can be solved in post-processing, since angle labels per region are available.
+
+\item The last example is a case of extreme perspective that makes the observed slope of the bars of the same code vary. The \texttt{MDD DRT} method solved it very well, and the bars changed smoothly so that they could be grouped in a single region. 
+
+The problems of joining nearby characters are once again evident. 
+
+The lack of precision of the boundaries in the upper-right corner of the code is due to another factor. Unlike the other sample images in this figure, which were taken by directly accessing the camera, i.e., without compression and disabling edge enhancements, in this case, it is a JPEG image where there are compression artifacts. Those artifacts, at a low scale, make the \texttt{MDD DRT} method choose not to trigger. This is not exactly a disadvantage, but it has to be noted that the method works best when using raw camera frames instead of compressed images or video.
+\end{itemize}
+
+Another aspect in which our proposed methods distinguish themselves from non-AR-oriented methods is the emphasis on treating the input as a sequence of images, rather than as a still picture. In this sense, the output of many consecutive short-exposure frames is shown in a video provided in the repository, of which an example frame is shown in Figure \ref{fig:frame_video_demo}. Again, it is difficult to assess how temporal changes would affect neural network-based methods, but in our method, differential changes in the input induce differential changes in the output, as is desirable, and the marks do not shift or disappear, even in the presence of considerable motion blur and noise due to shooting indoor with short exposure times.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.35\textwidth]{figures/results/video_capture.png}
+    \caption{Frame of the video provided in the repository documentation. Available at \href{https://raw.githubusercontent.com/DoMondo/an_encoder_decoder_architecture/master/readme_data/cover.gif}{link}.}
+    \label{fig:frame_video_demo}
+\end{figure}
+
+
+\begin{figure}[h]
+\centering
+\hspace*{-\dimexpr\oddsidemargin+1in\relax}\makebox[\paperwidth]{%
+    \includegraphics[width=.15\paperwidth]{figures/results/long_code.jpg}
+    \includegraphics[width=.15\paperwidth]{figures/results/long_code_pdrt2.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/long_code_pdrt32.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/long_code_ps.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/long_code_mdd.png}
+} \\
+    
+\hspace*{-\dimexpr\oddsidemargin+1in\relax}\makebox[\paperwidth]{%
+    \includegraphics[width=.15\paperwidth]{figures/results/cluttered.jpg}
+    \includegraphics[width=.15\paperwidth]{figures/results/cluttered_pdrt2.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/cluttered_pdrt32.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/cluttered_ps.png} 
+    \includegraphics[width=.15\paperwidth]{figures/results/cluttered_mdd.png}
+} \\
+    
+\hspace*{-\dimexpr\oddsidemargin+1in\relax}\makebox[\paperwidth]{%
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur0.jpg}
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur0_pdrt2.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur0_pdrt32.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur0_ps.png} 
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur0_mdd.png}
+} \\
+    
+\hspace*{-\dimexpr\oddsidemargin+1in\relax}\makebox[\paperwidth]{%
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur1.jpg}
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur1_pdrt2.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur1_pdrt32.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur1_ps.png} 
+    \includegraphics[width=.15\paperwidth]{figures/results/lens_blur1_mdd.png}
+} \\
+
+\hspace*{-\dimexpr\oddsidemargin+1in\relax}\makebox[\paperwidth]{%
+    \includegraphics[width=.15\paperwidth]{figures/results/motion_blur.jpg}
+    \includegraphics[width=.15\paperwidth]{figures/results/motion_blur_pdrt2.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/motion_blur_pdrt32.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/motion_blur_ps.png} 
+    \includegraphics[width=.15\paperwidth]{figures/results/motion_blur_mdd.png}
+} \\
+
+ \hspace*{-\dimexpr\oddsidemargin+1in\relax}\makebox[\paperwidth]{%
+    \includegraphics[width=.15\paperwidth]{figures/results/low_contrast.jpg}
+    \includegraphics[width=.15\paperwidth]{figures/results/low_contrast_pdrt2.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/low_contrast_pdrt32.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/low_contrast_ps.png} 
+    \includegraphics[width=.15\paperwidth]{figures/results/low_contrast_mdd.png}
+} \\
+
+
+\hspace*{-\dimexpr\oddsidemargin+1in\relax}\makebox[\paperwidth]{%
+    \includegraphics[width=.15\paperwidth]{figures/results/shear.jpg}
+    \includegraphics[width=.15\paperwidth]{figures/results/shear_pdrt2.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/shear_pdrt32.png}
+    \includegraphics[width=.15\paperwidth]{figures/results/shear_ps.png} 
+    \includegraphics[width=.15\paperwidth]{figures/results/shear_mdd.png}
+} \\
+
+    \captionsetup{margin={-3.5cm,1.5cm}}
+    \caption{Columns, from left to right: input image and output of algorithms \texttt{PDRT 2}, \texttt{PDRT 32}, \texttt{PS DRT}, and \texttt{MDD DRT}. Rows, challenging scenarios, from top to bottom: elongated, cluttered, mild lens blur, strong lens blur, motion blur, low contrast, and shear.}
+    \label{fig:results_4_methods}
+ \end{figure}
+ 
+\subsection{Disadvantages}
+The main disadvantages of the \texttt{MDD DRT} method are exemplified in the above challenging scenarios and can be summarized as follows:
+\begin{itemize}
+\item Certain alphanumeric characters above or below barcodes, and lines and outlines to the left and right, tend to merge with the barcodes, producing false positives.
+\item When several adverse circumstances concur, a single instance of a barcode can be split into two connected regions.
+\end{itemize}
+It could be argued that neural network-based methods would solve both problems at their root without paying specific attention to them, whereas here, they must be taken into account. However, errors do not arise unpredictably here, while it is often the case when networks are pruned or retrained on different data. With our proposed methodologies, problems can be tackled specifically and with more or less simple methods, depending on the available time margin and severity of the error.
+
+The methods are based on the characterization of one-dimensional barcodes as sequences of parallel bars, so the detector cannot be used for the detection of two-dimensional codes, such as QR codes.
+
+\subsection{Conclusions}
+Considering the computation time cost and the qualitative assessment, the authors choose \texttt{MDD DRT} as the best solution for solving the problem of barcode segmentation for AR. 
+This method allows real-time execution on desktop CPUs. The detection quality is not sacrificed in areas that are particularly relevant in AR-oriented applications, e.g., detection of barcodes affected by motion and lens blur; performance in image sequences acquired in video time; and detection in one-megapixel image streams, with a labeled output of a quarter of the input resolution.
+
+\add{The execution time of the proposed method has been measured and compared with state-of-the-art methods. The \texttt{MDD DRT} outperforms other methods, when using a CPU. The accuracy has been also measured.} \replace{When compared with state-of-the-art machine learning-based methods, using widely used labeled datasets, the proposed method performs worse}{The proposed method performs worse than state-of-the-art machine learning methods that use widely available labeled datasets}. Regardless, the goodness of the method consists in the speed and the ability to deal with AR scenarios. \add{For this, a small set of images, representative of these scenarios are discussed as a qualitative analysis. Finally synthetic tests have been performed to evaluate the robustness of the method.}
+
+
+\subsection{Future lines of research}
+It is the belief of the authors that a simple morphological closing method with a structuring element with orientation orthogonal to the bars can greatly ameliorate the problems that are now the performance limit of the \texttt{MDD DRT} method, but it is not the object of study of this paper, which is limited to presenting a segmenter that maximizes true positives while minimizing false negatives. 
+If simple post-processing methods were not enough, it could be considered to improve the voting system of the decoder so that there is no overflow for nearby characters nor discontinuities in the segmentation of codes, but this remains an open line for the future.
+
+On the other hand, the \texttt{MDD DRT} method consists of two parts that could be used separately. This gives rise to the possibility of creating a new detector that is valid for two-dimensional codes and still reuse the decoder. Another future line of work could be to use the decoder in other problems for which an appropriate encoder can be rewritten, such as the depth-from-focus problem \cite{ShapeFromFocus, focus3D}.
+
+The \texttt{MDD DRT} method does not currently meet the time constraints of mobile devices. However, improvements in mobile CPU architectures are so fast that soon the algorithm will be able to run in real time when using the same implementation and a newer CPU. There are two things that can be considered in this regard:
+\begin{itemize}
+    \item First, the scheduling of the algorithm in Halide can be improved, since the measurements were manually taken using an auto-scheduler, which gives a schedule that can be improved upon. In addition, the GPU target of SD 888 can also be used.
+    \item Second, more pruning can be made on \texttt{MDD DRT} by modifying two constants: input size and halting stage. For example, starting from $512\times512$ instead of $1024\times1024$ and stopping at \texttt{tile\_size = 16} would reduce the execution time to ~40\% of the original time. How much pruning can be performed without losing too much quality is an assessment that can be performed in follow-up research.
+\end{itemize}
+
+
+\authorcontributions{Conceptualization, Oscar Gomez-Cardenes and José Marichal-Hernández; Data curation, José Rodríguez-Ramos; Formal analysis, José Marichal-Hernández; Funding acquisition, José Rodríguez-Ramos; Investigation, Oscar Gomez-Cardenes and Jung-Young Son; Methodology, Jung-Young Son; Project administration, Rafael Perez-Jimenez; Resources, Jung-Young Son, Rafael Perez-Jimenez, and José Rodríguez-Ramos; Software, Oscar Gomez-Cardenes and José Marichal-Hernández; Supervision, José Marichal-Hernández; Validation, Oscar Gomez-Cardenes and Jung-Young Son; Visualization, Oscar Gomez-Cardenes; Writing---original draft, Oscar Gomez-Cardenes and José Marichal-Hernández; Writing---review and editing, Jung-Young Son, Rafael Perez-Jimenez, and José Rodríguez-Ramos.}
+
+\funding{O.G.-C. was partially supported by "Catalina Ruiz training aid program for research personnel" (Regional Ministry of Economy, Knowledge, and Employment), as well as the European Social Fund. The participation of J.G.M.-H. was partially funded by "Estrategia de Especialización inteligente de Canarias RIS-3" (Government of the Canary Islands); European Regional Development Fund (grant No. ProID2020010066); and "Research agreement on consumer electronics Wooptix-ULL, 2023". J.-Y.S. acknowledges the Institute of Information and Communications Technology Planning and Evaluation (IITP) grant funded by the Korean government (MSIT; No. 2020-0-00537, "Development of 5G based low latency device–edge cloud interaction technology"; 50\%) and the Priority Research Centers Program of the National Research Foundation of Korea (NRF) funded by the Ministry of Education (grant No. NRF-2018R1A6A1A03025542; 50\%).}
+
+\dataavailability{The images used for evaluating the quality of the results and the code to generate them are available in \cite{source_code}.} 
+
+
+\conflictsofinterest{The authors declare no conflict of interest. The founders had no role in the design of the study; in the collection, analyses, or interpretation of data; in the writing of the manuscript; or in the decision to publish the results.} 
+
+\abbreviations{Abbreviations}{
+The following abbreviations are used in this manuscript:\\
+
+\noindent 
+\begin{tabular}{@{}ll}
+AI & Artificial intelligence\\
+AR & Augmented reality\\
+CNN & Convolutional neural network\\
+CPU & Central processing unit\\
+DRT & Discrete Radon transform\\
+FCN & Full convolutional network\\
+GPU & Graphics processing unit\\
+SoC & System on chip \\
+SD & Snapdragon \\
+IoU & Intersection over union \\
+\end{tabular}}
+
+% \appendixtitles{no} % Leave argument "no" if all appendix headings stay EMPTY (then no dot is printed after "Appendix A"). If the appendix sections contain a heading then change the argument to "yes".
+% \appendixstart
+% \appendix
+% \section[\appendixname~\thesection]{}
+% \subsection[\appendixname~\thesubsection]{}
+% The appendix is an optional section that can contain details and data supplemental to the main text---for example, explanations of experimental details that would disrupt the flow of the main text but nonetheless remain crucial to understanding and reproducing the research shown; figures of replicates for experiments of which representative data are shown in the main text can be added here if brief, or as Supplementary Data. Mathematical proofs of results not central to the paper can be added as an appendix.
+
+
+
+% \section[\appendixname~\thesection]{}
+% All appendix sections must be cited in the main text. In the appendices, Figures, Tables, etc. should be labeled, starting with ``A''---e.g., Figure A1, Figure A2, etc.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\begin{adjustwidth}{-\extralength}{0cm}
+%\printendnotes[custom] % Un-comment to print a list of endnotes
+
+\reftitle{References}
+\bibliography{references}
+
+% Please provide either the correct journal abbreviation (e.g. according to the “List of Title Word Abbreviations” http://www.issn.org/services/online-services/access-to-the-ltwa/) or the full name of the journal.
+% Citations and References in Supplementary files are permitted provided that they also appear in the reference list here. 
+
+
+% If authors have biography, please use the format below
+%\section*{Short Biography of Authors}
+%\bio
+%{\raisebox{-0.35cm}{\includegraphics[width=3.5cm,height=5.3cm,clip,keepaspectratio]{Definitions/author1.pdf}}}
+%{\textbf{Firstname Lastname} Biography of first author}
+%
+%\bio
+%{\raisebox{-0.35cm}{\includegraphics[width=3.5cm,height=5.3cm,clip,keepaspectratio]{Definitions/author2.jpg}}}
+%{\textbf{Firstname Lastname} Biography of second author}
+
+% For the MDPI journals use author-date citation, please follow the formatting guidelines on http://www.mdpi.com/authors/references
+% To cite two works by the same author: \citeauthor{ref-journal-1a} (\citeyear{ref-journal-1a}, \citeyear{ref-journal-1b}). This produces: Whittaker (1967, 1975)
+% To cite two works by the same author with specific pages: \citeauthor{ref-journal-3a} (\citeyear{ref-journal-3a}, p. 328; \citeyear{ref-journal-3b}, p.475). This produces: Wong (1999, p. 328; 2000, p. 475)
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% for journal Sci
+%\reviewreports{\\
+%Reviewer 1 comments and authors’ response\\
+%Reviewer 2 comments and authors’ response\\
+%Reviewer 3 comments and authors’ response
+%}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\end{adjustwidth}
+\end{document}
+
